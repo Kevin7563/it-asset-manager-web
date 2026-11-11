@@ -24,7 +24,7 @@
         transfers: '🔄 資訊資產轉移', recycle: '🗑️ 資源回收桶',
         'vendor-board': '📊 廠商管理看板', vendors: '➕ 新增廠商資訊', 'vendor-edit': '✏️ 廠商資料維護',
         'vendor-maint-log': '🗂️ 廠商維護歷程看板', 'vendor-maint-add': '📝 新增廠商維護紀錄',
-        fields: '🧩 欄位管理', users: '👥 帳號管理', logs: '📜 使用日誌', tools: '📥 匯入／備份', password: '🔒 修改我的密碼'
+        fields: '🧩 欄位管理', users: '👥 帳號管理', logs: '📜 使用日誌', update: '🔄 版本與更新', tools: '📥 匯入／備份', password: '🔒 修改我的密碼'
     };
 
     // 🎛️ 權限：all 全功能／query 一般查詢與報表匯出／vendor 廠商管理／asset 資產管理
@@ -34,7 +34,7 @@
         'asset-new': ['asset'], repairs: ['asset'], transfers: ['asset'], recycle: ['asset'],
         'vendor-board': ['vendor'], vendors: ['vendor'], 'vendor-edit': ['vendor'],
         'vendor-maint-log': ['vendor'], 'vendor-maint-add': ['vendor'],
-        fields: ['all'], users: ['all'], logs: ['all'], tools: ['all']
+        fields: ['all'], users: ['all'], logs: ['all'], update: ['all'], tools: ['all']
     };
 
     const state = {
@@ -305,7 +305,8 @@
         if (name === 'vendor-maint-add') { await loadVendors(); }
         if (name === 'fields') { await loadFieldOptions(); renderFields(); }
         if (name === 'users') { await loadUsers(); }
-        if (name === 'tools') { await Promise.all([loadVersionInfo(), loadAttachmentStatus()]); }
+        if (name === 'tools') { await loadAttachmentStatus(); }
+        if (name === 'update') { await loadVersionInfo(); }
         if (name === 'logs') { await loadLogs(0); }
     }
 
