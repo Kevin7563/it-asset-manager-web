@@ -1,0 +1,23 @@
+{
+  "name": "it-asset-manager-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IT 資產管理系統 — Web 版（獨立專案，含 GitHub 線上更新）",
+  "author": "KevinChang",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "release:pack": "node scripts/pack-release.mjs",
+    "release:patch": "npm version patch && node scripts/release.mjs",
+    "release:minor": "npm version minor && node scripts/release.mjs",
+    "release:major": "npm version major && node scripts/release.mjs"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "sqlite3": "^6.0.1"
+  }
+}

@@ -1,0 +1,36 @@
+name: Release
+
+# 推送 vX.Y.Z 標籤時：
+#   1. 打包「程式檔」ZIP（不含 data/uploads/backups/node_modules）
+#   2. 建立 GitHub Release 並附上 ZIP（Web 版「線上更新」會下載這個檔案）
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pack app zip
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          zip -r "out/it-asset-manager-web-v${VER}.zip" \
+            server.js package.json config.json.example README.md CHANGELOG.md \
+            lib public docs scripts
+          ls -lh out
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "IT 資產管理系統 Web v${{ github.ref_name }}"
+          files: out/it-asset-manager-web-v*.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
