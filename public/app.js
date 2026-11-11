@@ -43,7 +43,7 @@
         catOpts: [], depOpts: [], categories: {}, departments: {},
         locks: { asset: {}, vendor: {} }, lockedAsset: 0, lockedVendor: 0,
         perms: [],
-        logs: { rows: [], total: 0, offset: 0, limit: 200 },
+        logs: { rows: [], total: 0, offset: 0, limit: 30 },
         vendorKeyword: '', vendorEditKeyword: '', maintKeyword: '', pendingVendorId: 0, vendorModalId: 0,
         maintSort: 'desc', maintModalId: 0,
         keyword: '', page: 'dashboard', editingAssetId: 0, editingUserId: 0, editingUpdatedAt: ''
@@ -51,6 +51,55 @@
 
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ── 分頁（所有看板共用；每頁 10/30/50/100）───────────
+    const PAGE_SIZES = [10, 30, 50, 100];
+    const paging = {};
+    function pager(key) {
+        if (!paging[key]) paging[key] = { size: 30, page: 1 };
+        return paging[key];
+    }
+    function resetPage(key) { pager(key).page = 1; }
+    function pageSlice(key, list) {
+        const st = pager(key);
+        const total = list.length;
+        const pages = Math.max(1, Math.ceil(total / st.size));
+        if (st.page > pages) st.page = pages;
+        if (st.page < 1) st.page = 1;
+        const start = (st.page - 1) * st.size;
+        return { rows: list.slice(start, start + st.size), total: total, pages: pages, page: st.page, size: st.size };
+    }
+    function renderPager(elId, key, info, onGo) {
+        const el = $(elId);
+        if (!el) return;
+        if (!info || !info.total) { el.innerHTML = ''; return; }
+        const startIdx = (info.page - 1) * info.size + 1;
+        const endIdx = Math.min(info.total, info.page * info.size);
+        el.innerHTML = '<div class="pager-bar">'
+            + '<span class="count">第 ' + startIdx + '–' + endIdx + ' 筆 / 共 ' + info.total + ' 筆</span>'
+            + '<label class="pager-size">每頁 <select data-size>'
+            + PAGE_SIZES.map(s => '<option value="' + s + '"' + (s === info.size ? ' selected' : '') + '>' + s + '</option>').join('')
+            + '</select> 筆</label>'
+            + '<span class="pager-nav">'
+            + '<button type="button" class="btn btn-ghost btn-sm" data-go="1"' + (info.page <= 1 ? ' disabled' : '') + '>«</button>'
+            + '<button type="button" class="btn btn-ghost btn-sm" data-go="' + (info.page - 1) + '"' + (info.page <= 1 ? ' disabled' : '') + '>◀ 上一頁</button>'
+            + '<span class="pager-info">第 ' + info.page + ' / ' + info.pages + ' 頁</span>'
+            + '<button type="button" class="btn btn-ghost btn-sm" data-go="' + (info.page + 1) + '"' + (info.page >= info.pages ? ' disabled' : '') + '>下一頁 ▶</button>'
+            + '<button type="button" class="btn btn-ghost btn-sm" data-go="' + info.pages + '"' + (info.page >= info.pages ? ' disabled' : '') + '>»</button>'
+            + '</span></div>';
+        const sel = el.querySelector('[data-size]');
+        if (sel) sel.addEventListener('change', () => {
+            pager(key).size = parseInt(sel.value, 10) || 30;
+            pager(key).page = 1;
+            onGo();
+        });
+        el.querySelectorAll('[data-go]').forEach(btn => btn.addEventListener('click', () => {
+            const n = parseInt(btn.getAttribute('data-go'), 10);
+            if (!n || n < 1) return;
+            pager(key).page = n;
+            onGo();
+        }));
+    }
     const dash = (v) => (v != null && String(v).trim() !== '') ? esc(v) : '<span class="muted">—</span>';
     const money = (n) => (Number(n) || 0).toLocaleString();
 
@@ -396,11 +445,12 @@
         if (!tbody) return;
         const kw = state.keyword.trim().toLowerCase();
         const list = state.assets.filter(a => assetMatches(a, kw));
+        const info = pageSlice('assets', list);
         tbody.innerHTML = '';
         const label = $('count-label');
         if (label) label.textContent = kw ? ('符合 ' + list.length + ' / ' + state.assets.length + ' 筆') : ('共 ' + state.assets.length + ' 筆');
         const empty = $('empty-state'); if (empty) empty.classList.toggle('hidden', list.length > 0);
-        list.forEach(item => {
+        info.rows.forEach(item => {
             let notesHtml = item.notes ? esc(item.notes) : '<span class="muted">—</span>';
             if (item.status === 'scrapped' && item.scrap_reason) notesHtml += '<div style="color:#b91c1c;font-size:12px;margin-top:4px;">🚨 ' + esc(item.scrap_reason) + '</div>';
             const tr = document.createElement('tr');
@@ -418,6 +468,7 @@
             tr.querySelector('.name-link').addEventListener('click', (e) => { e.preventDefault(); openDetail(item.id); });
             tbody.appendChild(tr);
         });
+        renderPager('pager-assets', 'assets', info, renderAssetTable);
     }
 
     function closeDetail() { $('detail-modal').classList.add('hidden'); }
@@ -560,9 +611,10 @@
     function renderRepairs() {
         const tbody = document.querySelector('#repairs-table tbody');
         if (!tbody) return;
+        const info = pageSlice('repairs', state.repairs);
         tbody.innerHTML = '';
-        if (!state.repairs.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">目前沒有維修紀錄。</td></tr>'; return; }
-        state.repairs.forEach(r => {
+        if (!state.repairs.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">目前沒有維修紀錄。</td></tr>'; renderPager('pager-repairs', 'repairs', info, renderRepairs); return; }
+        info.rows.forEach(r => {
             const stText = r.status === 'completed' ? '<span class="badge badge-active">已完工</span>'
                 : (r.status === 'scrapped' ? '<span class="badge badge-scrapped">因報廢結案</span>' : '<span class="badge badge-repair">維修中</span>');
             const tr = document.createElement('tr');
@@ -580,6 +632,7 @@
         });
         tbody.querySelectorAll('[data-complete]').forEach(btn => btn.addEventListener('click', () => completeRepair(Number(btn.getAttribute('data-complete')))));
         tbody.querySelectorAll('[data-del-repair]').forEach(btn => btn.addEventListener('click', () => removeRepair(Number(btn.getAttribute('data-del-repair')))));
+        renderPager('pager-repairs', 'repairs', info, renderRepairs);
     }
 
     async function completeRepair(id) {
@@ -597,9 +650,10 @@
     function renderTransfers() {
         const tbody = document.querySelector('#transfers-table tbody');
         if (!tbody) return;
+        const info = pageSlice('transfers', state.transfers);
         tbody.innerHTML = '';
-        if (!state.transfers.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">目前沒有轉移紀錄。</td></tr>'; return; }
-        state.transfers.forEach(t => {
+        if (!state.transfers.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">目前沒有轉移紀錄。</td></tr>'; renderPager('pager-transfers', 'transfers', info, renderTransfers); return; }
+        info.rows.forEach(t => {
             const tr = document.createElement('tr');
             const reason = [t.reason, t.notes].filter(x => x && String(x).trim()).join('　');
             tr.innerHTML = '<td><span class="asset-no">' + esc(t.asset_no) + '</span></td>'
@@ -612,6 +666,7 @@
             tbody.appendChild(tr);
         });
         tbody.querySelectorAll('[data-del-transfer]').forEach(btn => btn.addEventListener('click', () => removeTransfer(Number(btn.getAttribute('data-del-transfer')))));
+        renderPager('pager-transfers', 'transfers', info, renderTransfers);
     }
 
     async function removeTransfer(id) {
@@ -642,12 +697,13 @@
         if (!tbody) return;
         const kw = String(state.vendorKeyword || '').trim().toLowerCase();
         const list = state.vendors.filter(v => vendorMatches(v, kw));
+        const info = pageSlice('vendors', list);
         tbody.innerHTML = '';
         const label = $('vendor-count-label');
         if (label) label.textContent = kw ? ('符合 ' + list.length + ' / ' + state.vendors.length + ' 家') : ('共 ' + state.vendors.length + ' 家');
         const empty = $('vendors-empty'); if (empty) empty.classList.toggle('hidden', list.length > 0);
-        if (!list.length) return;
-        list.forEach(v => {
+        if (!list.length) { renderPager('pager-vendors', 'vendors', info, renderVendors); return; }
+        info.rows.forEach(v => {
             const nda = v.has_nda ? '<span class="badge badge-active">已簽署</span>' : '<span class="badge badge-scrapped">未簽署</span>';
             const period = (v.maint_start || v.maint_end) ? (esc(v.maint_start || '—') + ' ~ ' + esc(v.maint_end || '—')) : '<span class="muted">未設定</span>';
             const tr = document.createElement('tr');
@@ -666,6 +722,7 @@
         tbody.querySelectorAll('[data-goto-edit]').forEach(btn => btn.addEventListener('click', () => gotoVendorEdit(Number(btn.getAttribute('data-goto-edit')))));
         tbody.querySelectorAll('[data-files-vendor]').forEach(btn => btn.addEventListener('click', () => openVendorFiles(Number(btn.getAttribute('data-files-vendor')))));
         tbody.querySelectorAll('[data-del-vendor]').forEach(btn => btn.addEventListener('click', () => removeVendor(Number(btn.getAttribute('data-del-vendor')))));
+        renderPager('pager-vendors', 'vendors', info, renderVendors);
     }
 
     function renderVendorStats() {
@@ -833,6 +890,7 @@
             const cmp = da.localeCompare(db);
             return state.maintSort === 'asc' ? cmp : -cmp;
         });
+        const info = pageSlice('maint', list);
         const sortBtn = $('maint-sort-btn');
         if (sortBtn) sortBtn.textContent = state.maintSort === 'asc' ? '▲' : '▼';
 
@@ -842,9 +900,9 @@
         const empty = $('maint-empty'); if (empty) empty.classList.toggle('hidden', list.length > 0);
         renderMaintStats();
         renderMaintExportVendors();
-        if (!list.length) return;
+        if (!list.length) { renderPager('pager-maint', 'maint', info, renderMaint); return; }
 
-        list.forEach(r => {
+        info.rows.forEach(r => {
             const tr = document.createElement('tr');
             const docCnt = splitPaths(r.doc_files).length;
             const content = [r.content, r.notes].filter(x => x && String(x).trim()).join('　');
@@ -874,6 +932,7 @@
         tbody.querySelectorAll('[data-files-maint]').forEach(btn => btn.addEventListener('click', () => openMaintDocs(Number(btn.getAttribute('data-files-maint')))));
         tbody.querySelectorAll('[data-view-vendor]').forEach(a => a.addEventListener('click', (e) => { e.preventDefault(); openVendorDetail(Number(a.getAttribute('data-view-vendor'))); }));
         tbody.querySelectorAll('[data-del-maint]').forEach(btn => btn.addEventListener('click', () => removeMaint(Number(btn.getAttribute('data-del-maint')))));
+        renderPager('pager-maint', 'maint', info, renderMaint);
     }
 
     async function exportMaintByVendor() {
@@ -895,10 +954,11 @@
     function renderRecycle() {
         const tbody = document.querySelector('#recycle-table tbody');
         if (!tbody) return;
+        const info = pageSlice('recycle', state.recycle);
         tbody.innerHTML = '';
         const empty = $('recycle-empty'); if (empty) empty.classList.toggle('hidden', state.recycle.length > 0);
-        if (!state.recycle.length) return;
-        state.recycle.forEach(a => {
+        if (!state.recycle.length) { renderPager('pager-recycle', 'recycle', info, renderRecycle); return; }
+        info.rows.forEach(a => {
             const tr = document.createElement('tr');
             tr.innerHTML = '<td><span class="asset-no">' + esc(a.asset_no) + '</span></td>'
                 + '<td>' + esc(a.name || '') + '</td>'
@@ -909,6 +969,7 @@
             tbody.appendChild(tr);
         });
         tbody.querySelectorAll('[data-restore]').forEach(btn => btn.addEventListener('click', () => restoreAsset(Number(btn.getAttribute('data-restore')))));
+        renderPager('pager-recycle', 'recycle', info, renderRecycle);
     }
 
     async function restoreAsset(id) {
@@ -967,9 +1028,10 @@
     function renderUsers() {
         const tbody = document.querySelector('#users-table tbody');
         if (!tbody) return;
+        const info = pageSlice('users', state.users);
         tbody.innerHTML = '';
-        if (!state.users.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">尚無帳號。</td></tr>'; return; }
-        state.users.forEach(u => {
+        if (!state.users.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">尚無帳號。</td></tr>'; renderPager('pager-users', 'users', info, renderUsers); return; }
+        info.rows.forEach(u => {
             const self = state.user && u.id === state.user.id;
             const perms = (Array.isArray(u.perms) && u.perms.length) ? u.perms : (u.role === 'admin' ? ['all'] : ['query']);
             const roleBadge = perms.map(p => '<span class="role-pill ' + (PERM_BADGE[p] || 'role-user') + '">' + (PERM_LABELS[p] || p) + '</span>').join(' ');
@@ -991,6 +1053,7 @@
         tbody.querySelectorAll('[data-reset-pw]').forEach(b => b.addEventListener('click', () => resetUserPassword(Number(b.getAttribute('data-reset-pw')))));
         tbody.querySelectorAll('[data-toggle-active]').forEach(b => b.addEventListener('click', () => toggleActive(Number(b.getAttribute('data-toggle-active')))));
         tbody.querySelectorAll('[data-del-user]').forEach(b => b.addEventListener('click', () => removeUser(Number(b.getAttribute('data-del-user')))));
+        renderPager('pager-users', 'users', info, renderUsers);
     }
 
     // 權限勾選：全功能 與 其他項目互斥
@@ -1960,11 +2023,16 @@
 
         const from = rows.length ? (state.logs.offset + 1) : 0;
         const to = state.logs.offset + rows.length;
-        const label = $('logs-count');
-        if (label) label.textContent = rows.length ? ('顯示第 ' + from + '–' + to + ' 筆／共 ' + state.logs.total + ' 筆') : ('共 ' + state.logs.total + ' 筆');
-        const prev = $('logs-prev'), next = $('logs-next');
-        if (prev) prev.disabled = state.logs.offset <= 0;
-        if (next) next.disabled = (state.logs.offset + rows.length) >= state.logs.total;
+        const size = state.logs.limit || 30;
+        const page = Math.floor((state.logs.offset || 0) / size) + 1;
+        const pages = Math.max(1, Math.ceil((state.logs.total || 0) / size));
+        pager('logs').size = size;
+        pager('logs').page = page;
+        renderPager('pager-logs', 'logs', { total: state.logs.total, pages: pages, page: page, size: size }, () => {
+            const st = pager('logs');
+            state.logs.limit = st.size;
+            loadLogs((st.page - 1) * st.size);
+        });
 
         const userSel = $('logs-user');
         if (userSel && Array.isArray(data.users)) {
@@ -2042,7 +2110,7 @@
         initNavTree();
 
         const search = $('search');
-        if (search) search.addEventListener('input', (e) => { state.keyword = e.target.value || ''; renderAssetTable(); });
+        if (search) search.addEventListener('input', (e) => { state.keyword = e.target.value || ''; resetPage('assets'); renderAssetTable(); });
         const refresh = $('refresh-btn');
         if (refresh) refresh.addEventListener('click', async () => { toast('🔄 重新載入資料...', 'info'); await refreshPage(state.page); });
         const exportBtn = $('export-btn');
@@ -2085,7 +2153,7 @@
         $('vendor-edit-load').addEventListener('click', () => loadVendorIntoEdit($('vendor-edit-select').value));
         $('vendor-edit-select').addEventListener('change', () => { const v = $('vendor-edit-select').value; if (v) loadVendorIntoEdit(v); });
         $('vendor-edit-search').addEventListener('input', (e) => { state.vendorEditKeyword = e.target.value; renderVendorPicker(e.target.value); });
-        $('vendor-search').addEventListener('input', (e) => { state.vendorKeyword = e.target.value; renderVendors(); });
+        $('vendor-search').addEventListener('input', (e) => { state.vendorKeyword = e.target.value; resetPage('vendors'); renderVendors(); });
         $('goto-vendor-add').addEventListener('click', () => showPage('vendors'));
         $('goto-maint-add').addEventListener('click', () => showPage('vendor-maint-add'));
         $('goto-vendor-board').addEventListener('click', () => showPage('vendor-board'));
@@ -2098,7 +2166,7 @@
         $('maint-modal-close').addEventListener('click', closeMaintDetail);
         $('maint-modal').addEventListener('click', (e) => { if (e.target && e.target.id === 'maint-modal') closeMaintDetail(); });
         $('maint-modal-files').addEventListener('click', () => { const id = state.maintModalId; if (id) openMaintDocs(id); });
-        $('maint-search').addEventListener('input', (e) => { state.maintKeyword = e.target.value; renderMaint(); });
+        $('maint-search').addEventListener('input', (e) => { state.maintKeyword = e.target.value; resetPage('maint'); renderMaint(); });
         $('m-cancel').addEventListener('click', () => { ['m-date', 'm-equipment', 'm-sn', 'm-type', 'm-handler', 'm-cost', 'm-content', 'm-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; }); });
         $('form-maint').addEventListener('submit', submitMaintForm);
         $('form-field-cat').addEventListener('submit', (e) => { e.preventDefault(); addField('category'); });
@@ -2129,8 +2197,6 @@
         // 📜 使用日誌
         $('logs-search-btn').addEventListener('click', () => loadLogs(0));
         $('logs-reset-btn').addEventListener('click', resetLogFilters);
-        $('logs-prev').addEventListener('click', () => loadLogs(Math.max(0, (state.logs.offset || 0) - (state.logs.limit || 200))));
-        $('logs-next').addEventListener('click', () => loadLogs((state.logs.offset || 0) + (state.logs.limit || 200)));
         $('logs-export-btn').addEventListener('click', exportLogs);
         ['logs-from', 'logs-to', 'logs-user', 'logs-action'].forEach(id => {
             const el = $(id); if (el) el.addEventListener('change', () => loadLogs(0));
