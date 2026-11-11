@@ -122,7 +122,12 @@ function serveStatic(req, res, pathname) {
     fs.readFile(full, (err, data) => {
         if (err) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('404 Not Found'); return; }
         baseHeaders(res);
-        res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] || 'application/octet-stream', 'Content-Length': data.length });
+        res.writeHead(200, {
+            'Content-Type': MIME[path.extname(name)] || 'application/octet-stream',
+            'Content-Length': data.length,
+            // 一律重新驗證：避免更新後瀏覽器仍使用舊版 app.js / index.html（會造成新舊前端不一致）
+            'Cache-Control': 'no-cache, must-revalidate'
+        });
         res.end(data);
     });
 }
