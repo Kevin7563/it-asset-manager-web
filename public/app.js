@@ -24,7 +24,7 @@
         transfers: '🔄 資訊資產轉移', recycle: '🗑️ 資源回收桶',
         'vendor-board': '📊 廠商管理看板', vendors: '➕ 新增廠商資訊', 'vendor-edit': '✏️ 廠商資料維護',
         'vendor-maint-log': '🗂️ 廠商維護歷程看板', 'vendor-maint-add': '📝 新增廠商維護紀錄',
-        fields: '🧩 欄位管理', users: '👥 帳號管理', tools: '📥 匯入／備份', password: '🔒 修改我的密碼'
+        fields: '🧩 欄位管理', users: '👥 帳號管理', logs: '📜 使用日誌', tools: '📥 匯入／備份', password: '🔒 修改我的密碼'
     };
 
     // 🎛️ 權限：all 全功能／query 一般查詢與報表匯出／vendor 廠商管理／asset 資產管理
@@ -34,7 +34,7 @@
         'asset-new': ['asset'], repairs: ['asset'], transfers: ['asset'], recycle: ['asset'],
         'vendor-board': ['vendor'], vendors: ['vendor'], 'vendor-edit': ['vendor'],
         'vendor-maint-log': ['vendor'], 'vendor-maint-add': ['vendor'],
-        fields: ['all'], users: ['all'], tools: ['all']
+        fields: ['all'], users: ['all'], logs: ['all'], tools: ['all']
     };
 
     const state = {
@@ -43,6 +43,7 @@
         catOpts: [], depOpts: [], categories: {}, departments: {},
         locks: { asset: {}, vendor: {} }, lockedAsset: 0, lockedVendor: 0,
         perms: [],
+        logs: { rows: [], total: 0, offset: 0, limit: 200 },
         vendorKeyword: '', vendorEditKeyword: '', maintKeyword: '', pendingVendorId: 0, vendorModalId: 0,
         maintSort: 'desc', maintModalId: 0,
         keyword: '', page: 'dashboard', editingAssetId: 0, editingUserId: 0, editingUpdatedAt: ''
@@ -256,6 +257,7 @@
         if (name === 'fields') { await loadFieldOptions(); renderFields(); }
         if (name === 'users') { await loadUsers(); }
         if (name === 'tools') { await Promise.all([loadVersionInfo(), loadAttachmentStatus()]); }
+        if (name === 'logs') { await loadLogs(0); }
     }
 
     // ── 對照表 / 選單 ───────────────────────────────────
@@ -1892,6 +1894,123 @@
         } finally { btn.disabled = false; btn.textContent = old; }
     }
 
+    // ── 📜 使用日誌 ─────────────────────────────────────
+    const LOG_ACTION_LABELS = {
+        'login': '登入系統', 'login.fail': '登入失敗', 'logout': '登出系統',
+        'password.change': '修改自己的密碼', 'password.reset': '重設他人密碼',
+        'asset.create': '新增資產', 'asset.update': '修改資產', 'asset.delete': '移至回收桶', 'asset.restore': '還原資產',
+        'repair.create': '登記維修', 'repair.complete': '維修完工', 'repair.delete': '刪除維修紀錄',
+        'transfer.create': '資產轉移', 'transfer.delete': '刪除轉移紀錄',
+        'vendor.create': '新增廠商', 'vendor.update': '修改廠商', 'vendor.delete': '刪除廠商',
+        'maint.create': '新增維護紀錄', 'maint.delete': '刪除維護紀錄',
+        'vendor.file.upload': '上傳廠商附件', 'vendor.file.delete': '刪除廠商附件',
+        'maint.doc.upload': '上傳維護單據', 'maint.doc.delete': '刪除維護單據',
+        'field.create': '新增欄位選項', 'field.delete': '刪除欄位選項',
+        'user.create': '新增帳號', 'user.update': '修改帳號權限／狀態', 'user.delete': '刪除帳號',
+        'import.assets': '匯入資產資料', 'import.vendors': '匯入廠商資料', 'import.desktop': '匯入單機版備份',
+        'attachment.repair': '附件路徑修復',
+        'export.assets_sheet': '匯出資產資料表', 'export.vendors_sheet': '匯出廠商資料表',
+        'export.inventory': '匯出盤點總表', 'export.vendor_list': '匯出廠商清單',
+        'export.vendor_maint': '匯出維護歷程', 'export.asset_history': '匯出資產履歷', 'export.logs': '匯出使用日誌',
+        'backup.db': '下載資料庫備份', 'backup.files': '下載附件 ZIP', 'restore.db': '還原資料庫',
+        'repair.data': '資料修復（重編號／清備註）',
+        'update.download': '下載更新檔', 'update.apply': '套用更新', 'update.restart': '重新啟動服務'
+    };
+    const logActionLabel = (code) => LOG_ACTION_LABELS[code] || code || '—';
+    const logTime = (iso) => {
+        const d = new Date(String(iso || ''));
+        if (isNaN(d.getTime())) return String(iso || '');
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    };
+    const isFailLog = (code) => String(code || '').indexOf('fail') >= 0;
+
+    function logQuery() {
+        return {
+            from: ($('logs-from') || {}).value || '',
+            to: ($('logs-to') || {}).value || '',
+            username: ($('logs-user') || {}).value || '',
+            action: ($('logs-action') || {}).value || '',
+            keyword: ($('logs-keyword') || {}).value || ''
+        };
+    }
+
+    function renderLogs(data) {
+        const tbody = document.querySelector('#logs-table tbody');
+        if (!tbody) return;
+        const rows = (data && data.rows) || [];
+        state.logs.rows = rows;
+        state.logs.total = (data && data.total) || 0;
+        state.logs.offset = (data && data.offset) || 0;
+        state.logs.limit = (data && data.limit) || 200;
+
+        tbody.innerHTML = '';
+        const empty = $('logs-empty'); if (empty) empty.classList.toggle('hidden', rows.length > 0);
+        rows.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = '<td style="font-size:12.5px;white-space:nowrap;">' + esc(logTime(r.at)) + '</td>'
+                + '<td><strong>' + esc(r.username || '—') + '</strong></td>'
+                + '<td>' + esc(r.display_name || '') + '</td>'
+                + '<td><span class="badge ' + (isFailLog(r.action) ? 'badge-scrapped' : 'badge-inventory') + '" style="white-space:nowrap;">' + esc(logActionLabel(r.action)) + '</span></td>'
+                + '<td style="font-size:12.5px;">' + esc(r.detail || '') + '</td>'
+                + '<td style="font-size:12px;">' + esc(r.target_no || '') + '</td>'
+                + '<td style="font-size:12px;" class="sub">' + esc(r.ip || '—') + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        const from = rows.length ? (state.logs.offset + 1) : 0;
+        const to = state.logs.offset + rows.length;
+        const label = $('logs-count');
+        if (label) label.textContent = rows.length ? ('顯示第 ' + from + '–' + to + ' 筆／共 ' + state.logs.total + ' 筆') : ('共 ' + state.logs.total + ' 筆');
+        const prev = $('logs-prev'), next = $('logs-next');
+        if (prev) prev.disabled = state.logs.offset <= 0;
+        if (next) next.disabled = (state.logs.offset + rows.length) >= state.logs.total;
+
+        const userSel = $('logs-user');
+        if (userSel && Array.isArray(data.users)) {
+            const cur = userSel.value;
+            userSel.innerHTML = '<option value="">全部帳號</option>' + data.users.map(u => '<option value="' + esc(u) + '">' + esc(u) + '</option>').join('');
+            if (cur) userSel.value = cur;
+        }
+        const actSel = $('logs-action');
+        if (actSel && Array.isArray(data.actions)) {
+            const cur = actSel.value;
+            actSel.innerHTML = '<option value="">全部動作</option>' + data.actions.map(a => '<option value="' + esc(a.code) + '">' + esc(logActionLabel(a.code)) + '（' + a.count + '）</option>').join('');
+            if (cur) actSel.value = cur;
+        }
+    }
+
+    async function loadLogs(offset) {
+        const q = logQuery();
+        const params = new URLSearchParams(q);
+        params.set('limit', String(state.logs.limit || 200));
+        params.set('offset', String(Math.max(0, offset || 0)));
+        try {
+            const data = await api('/api/logs?' + params.toString());
+            renderLogs(data);
+        } catch (err) {
+            toast('❌ 載入使用日誌失敗：' + err.message, 'err');
+        }
+    }
+
+    async function exportLogs() {
+        const btn = $('logs-export-btn');
+        const old = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ 匯出中...';
+        try {
+            const params = new URLSearchParams(logQuery());
+            await downloadBlob('/api/export/logs.xlsx?' + params.toString(), '使用日誌.xlsx');
+            toast('📥 使用日誌報表已開始下載（依目前篩選條件）', 'ok');
+        } catch (err) { toast('❌ ' + err.message, 'err'); }
+        finally { btn.disabled = false; btn.textContent = old; }
+    }
+
+    function resetLogFilters() {
+        ['logs-from', 'logs-to', 'logs-keyword'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+        ['logs-user', 'logs-action'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+        loadLogs(0);
+    }
+
     async function loadVersionInfo() {
         const box = $('version-info');
         if (!box) return;
@@ -2007,6 +2126,17 @@
         $('update-apply-btn').addEventListener('click', applyUpdate);
         $('repair-preview-btn').addEventListener('click', previewRepair);
         $('repair-run-btn').addEventListener('click', runRepair);
+        // 📜 使用日誌
+        $('logs-search-btn').addEventListener('click', () => loadLogs(0));
+        $('logs-reset-btn').addEventListener('click', resetLogFilters);
+        $('logs-prev').addEventListener('click', () => loadLogs(Math.max(0, (state.logs.offset || 0) - (state.logs.limit || 200))));
+        $('logs-next').addEventListener('click', () => loadLogs((state.logs.offset || 0) + (state.logs.limit || 200)));
+        $('logs-export-btn').addEventListener('click', exportLogs);
+        ['logs-from', 'logs-to', 'logs-user', 'logs-action'].forEach(id => {
+            const el = $(id); if (el) el.addEventListener('change', () => loadLogs(0));
+        });
+        const logsKw = $('logs-keyword');
+        if (logsKw) logsKw.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadLogs(0); } });
 
         // 報表與附件
         $('export-vendors-btn').addEventListener('click', exportVendors);

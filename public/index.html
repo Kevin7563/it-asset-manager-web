@@ -69,6 +69,7 @@
                     <div class="nav-children" data-children="all">
                         <div class="nav-item sub" data-page="fields">🧩 欄位管理</div>
                         <div class="nav-item sub" data-page="users">👥 帳號管理</div>
+                        <div class="nav-item sub" data-page="logs">📜 使用日誌</div>
                         <div class="nav-item sub" data-page="tools">📥 匯入／備份</div>
                     </div>
                 </div>
@@ -434,6 +435,49 @@
                                 <thead><tr><th style="width:140px;">帳號</th><th>顯示名稱</th><th style="width:210px;text-align:center;">權限</th><th style="width:70px;text-align:center;">狀態</th><th style="width:140px;">最後登入</th><th style="width:220px;text-align:center;">操作</th></tr></thead>
                                 <tbody></tbody>
                             </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 📜 使用日誌 -->
+                <section id="page-logs" class="page hidden">
+                    <div class="card">
+                        <h3 class="card-title" style="display:flex;justify-content:space-between;align-items:center;">📜 使用日誌
+                            <button type="button" class="btn btn-success btn-sm" id="logs-export-btn">📥 匯出報表（Excel）</button>
+                        </h3>
+                        <div class="tip-mini">
+                            📌 記錄登入／登出、資產與廠商異動、維修／轉移、匯入匯出、備份還原、帳號權限變更、系統更新等操作（含時間、帳號、IP）。僅「全功能」權限可查看。
+                        </div>
+                        <div class="inline-form">
+                            <label style="font-size:12.5px;white-space:nowrap;">起 <input type="date" id="logs-from" style="width:150px;"></label>
+                            <label style="font-size:12.5px;white-space:nowrap;">迄 <input type="date" id="logs-to" style="width:150px;"></label>
+                            <select id="logs-user" style="min-width:130px;"><option value="">全部帳號</option></select>
+                            <select id="logs-action" style="min-width:170px;"><option value="">全部動作</option></select>
+                            <input type="text" id="logs-keyword" placeholder="🔍 關鍵字（內容／對象／帳號）" autocomplete="off" style="flex-grow:1;min-width:180px;">
+                            <button type="button" class="btn btn-primary" id="logs-search-btn">🔍 查詢</button>
+                            <button type="button" class="btn btn-ghost" id="logs-reset-btn">清除條件</button>
+                        </div>
+                        <div class="table-wrap">
+                            <table id="logs-table">
+                                <thead><tr>
+                                    <th style="width:160px;">時間</th>
+                                    <th style="width:130px;">帳號</th>
+                                    <th style="width:110px;">顯示名稱</th>
+                                    <th style="width:150px;">動作</th>
+                                    <th>內容</th>
+                                    <th style="width:130px;">對象編號</th>
+                                    <th style="width:130px;">IP</th>
+                                </tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <div id="logs-empty" class="empty hidden">查無使用日誌。</div>
+                        <div class="inline-form" style="justify-content:space-between;margin-top:10px;">
+                            <span id="logs-count" class="count">—</span>
+                            <span style="white-space:nowrap;">
+                                <button type="button" class="btn btn-ghost btn-sm" id="logs-prev">◀ 上一頁</button>
+                                <button type="button" class="btn btn-ghost btn-sm" id="logs-next">下一頁 ▶</button>
+                            </span>
                         </div>
                     </div>
                 </section>

@@ -54,6 +54,7 @@ table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 11
 #vendors-table { min-width: 900px; }
 #maint-table { min-width: 1040px; }
 #users-table { min-width: 960px; }
+#logs-table { min-width: 960px; }
 /* 欄位管理（兩欄版面內的小表格）：不要套用全域最小寬度，避免代號／操作被推出畫面 */
 #fields-cat-table, #fields-dep-table { min-width: 0; table-layout: fixed; }
 #fields-cat-table td:first-child, #fields-dep-table td:first-child { word-break: break-word; }

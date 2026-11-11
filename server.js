@@ -17,6 +17,7 @@ const extras = require('./lib/export-extras');
 const filesLib = require('./lib/files');
 const importer = require('./lib/importer');
 const repair = require('./lib/repair');
+const audit = require('./lib/audit');
 const updater = require('./lib/updater');
 
 const APP_ROOT = __dirname;
@@ -148,10 +149,13 @@ async function handleLogin(req, res) {
     }
     if (!row || !row.is_active || !auth.verifyPassword(password, row.password_salt, row.password_hash)) {
         const blocked = auth.recordFailure(ip);
+        audit.write(ctx, { username: username, action: 'login.fail', detail: '帳號或密碼錯誤（' + ip + '）', ip: ip });
         return sendJson(res, 401, { ok: false, message: blocked ? '嘗試次數過多，請稍後再試。' : '帳號或密碼錯誤。' });
     }
     auth.clearFailures(ip);
     const session = auth.createSession(row);
+    session.ip = ip;
+    auditLog(session, 'login', { detail: '登入成功（' + ip + '）' });
     baseHeaders(res);
     res.setHeader('Set-Cookie', auth.cookieHeader(session.sid));
     console.log(`[login] ${session.username} (${session.role}) from ${ip}`);
@@ -160,7 +164,12 @@ async function handleLogin(req, res) {
 
 function handleLogout(req, res) {
     const s = auth.getSession(req);
-    if (s) { auth.destroySession(s.sid); console.log(`[logout] ${s.username}`); }
+    if (s) {
+        s.ip = clientIp(req);
+        auditLog(s, 'logout', { detail: '登出系統' });
+        auth.destroySession(s.sid);
+        console.log(`[logout] ${s.username}`);
+    }
     baseHeaders(res);
     res.setHeader('Set-Cookie', auth.clearCookieHeader());
     return sendJson(res, 200, { ok: true });
@@ -236,6 +245,7 @@ async function reopenDb() {
     dbq = ctx;
     try { await ctx.exec('PRAGMA journal_mode = WAL'); } catch (e) {}
     await service.ensureSchema(ctx);
+    await audit.ensureSchema(ctx);
     await auth.init(makeSessionStore(ctx));   // 重新載入（還原後同步）
 }
 
@@ -260,6 +270,7 @@ async function handleRestoreDb(req, res, session) {
     ['-wal', '-shm'].forEach(s => { try { const p = dbPath + s; if (fs.existsSync(p)) fs.unlinkSync(p); } catch (e) {} });
     fs.writeFileSync(dbPath, buf);
     await reopenDb();
+    audit.write(ctx, { session: session, action: 'restore.db', target: 'system', detail: '還原資料庫；還原前備份:' + safety });
     console.log(`[restore] db restored by ${session.username}; safety backup: ${safety}`);
     return ok(res, { restored: true, safety: safety });
 }
@@ -282,6 +293,7 @@ async function handleImportDesktopBackup(req, res, session) {
         files: files, importFields: d.importFields !== false
     });
     console.log(`[import] desktop backup by ${session.username}: db=${result.dbImported ? result.dbName : '(none)'} tables=${JSON.stringify(result.tables)} attachments=${result.attachments} repointed=${result.repointed}`);
+    auditLog(session, 'import.desktop', { target: 'system', detail: '來源:' + (result.dbName || '(僅附件)') + ' ｜ 附件:' + result.attachments + ' ｜ 路徑修正:' + result.repointed });
     return ok(res, result);
 }
 
@@ -303,6 +315,7 @@ async function handleRepairAttachments(req, res, session) {
     const dataDir = path.dirname(path.resolve(CONFIG.dbPath));
     const result = await importer.repairAttachments({ ctx: ctx, dataDir: dataDir, files: files });
     console.log(`[attachments] repair by ${session.username}: extracted=${result.extracted} repointed=${result.repointed} valid=${result.after.existing}/${result.after.total}`);
+    auditLog(session, 'attachment.repair', { target: 'system', detail: '解壓:' + result.extracted + ' ｜ 路徑修正:' + result.repointed + ' ｜ 可用:' + result.after.existing + '/' + result.after.total });
     return ok(res, result);
 }
 
@@ -329,6 +342,7 @@ async function handleUpdateDownload(res, session) {
     const rel = await updater.fetchLatest(false);
     const staged = await updater.stage(rel);
     console.log(`[update] downloaded v${rel.version} (${staged.files} files, ${staged.size} bytes) by ${session.username}`);
+    auditLog(session, 'update.download', { target: 'system', detail: '版本 v' + rel.version + ' ｜ 檔案數:' + staged.files });
     return ok(res, {
         version: rel.version, files: staged.files, size: staged.size,
         versionInPkg: staged.versionInPkg, stagedDir: staged.stagedDir
@@ -344,12 +358,14 @@ async function handleUpdateApply(req, res, session) {
     if (!fs.existsSync(stagedDir)) throw new Error('尚未下載更新檔，請先按「⬇️ 下載更新檔」。');
     const out = updater.applyStaged(stagedDir, APP_VERSION, rel.version);
     console.log(`[update] applied v${rel.version} (${out.applied} files) by ${session.username}; backup: ${out.backup}`);
+    auditLog(session, 'update.apply', { target: 'system', detail: 'v' + APP_VERSION + ' → v' + rel.version + ' ｜ 檔案:' + out.applied + ' ｜ 備份:' + out.backup });
     return ok(res, { applied: out.applied, from: APP_VERSION, to: rel.version, backup: out.backup, restartRequired: true });
 }
 
 async function handleUpdateRestart(res, session) {
     if (!isAdmin(session)) return denyReadOnly(res);
     console.log(`[update] restart requested by ${session.username}`);
+    auditLog(session, 'update.restart', { target: 'system', detail: '重新啟動服務' });
     ok(res, { restarting: true });
     setTimeout(() => { try { updater.scheduleRestart(); } catch (e) { console.error('[update] restart failed: ' + (e.message || e)); } }, 300);
 }
@@ -379,6 +395,7 @@ async function handleRepairData(req, res, session) {
     });
     if (!dryRun) {
         console.log(`[repair] by ${session.username}: notes=${out.notesCleared} renumbered=${out.renumbered} backup=${safety}`);
+        auditLog(session, 'repair.data', { target: 'system', detail: '重新編號:' + out.renumbered + ' ｜ 清除重複備註:' + out.notesCleared + ' ｜ 備份:' + safety });
     }
     return ok(res, Object.assign({}, out, { safety: safety }));
 }
@@ -429,6 +446,7 @@ async function handleFilesZip(res, session) {
     res.setHeader('Content-Disposition', 'attachment; filename="vendor_files_' + stampTxt + '.zip"');
     res.setHeader('Content-Length', zip.buffer.length);
     console.log(`[backup] attachments zip by ${session.username}: ${zip.count} files, ${zip.buffer.length} bytes`);
+    auditLog(session, 'backup.files', { target: 'system', detail: '下載附件 ZIP：' + zip.count + ' 個檔案' });
     res.end(zip.buffer);
 }
 
@@ -462,6 +480,11 @@ function need(res, session, perm, label) {
     return false;
 }
 function denyReadOnly(res) { return denyPerm(res, '全功能'); }
+
+// 使用日誌（不影響主流程）
+function auditLog(session, action, opts) {
+    try { audit.log(ctx, session, action, opts || {}); } catch (e) { console.error('[audit] ' + (e && e.message)); }
+}
 function ok(res, data) { return sendJson(res, 200, Object.assign({ ok: true }, data || {})); }
 async function body(req, limit) {
     try { return await readJsonBody(req, limit || (4 * 1024 * 1024)); }
@@ -477,45 +500,137 @@ async function handleWriteApi(req, res, session, p) {
     const canAdmin = () => need(res, session, 'all', '全功能');
 
     // 資產（資產管理權限）
-    if (m === 'POST' && p === '/api/assets') { if (!canAsset()) return; return ok(res, await service.createAsset(ctx, await body(req), session)); }
-    if (m === 'PUT' && (mm = /^\/api\/assets\/(\d+)$/.exec(p))) { if (!canAsset()) return; return ok(res, await service.updateAsset(ctx, mm[1], await body(req), session)); }
-    if (m === 'DELETE' && (mm = /^\/api\/assets\/(\d+)$/.exec(p))) { if (!canAsset()) return; return ok(res, { asset: await service.deleteAsset(ctx, mm[1], session) }); }
-    if (m === 'POST' && (mm = /^\/api\/assets\/(\d+)\/restore$/.exec(p))) { if (!canAsset()) return; return ok(res, { asset: await service.restoreAsset(ctx, mm[1], session) }); }
+    if (m === 'POST' && p === '/api/assets') {
+        if (!canAsset()) return;
+        const d = await body(req);
+        const r = await service.createAsset(ctx, d, session);
+        auditLog(session, 'asset.create', { target: 'asset', targetId: r.id, targetNo: r.asset_no, detail: '設備:' + (d.name || '') + ' ｜ 大類:' + (d.category || '') + ' ｜ 部門:' + (d.department || 'IT') });
+        return ok(res, r);
+    }
+    if (m === 'PUT' && (mm = /^\/api\/assets\/(\d+)$/.exec(p))) {
+        if (!canAsset()) return;
+        const d = await body(req);
+        const r = await service.updateAsset(ctx, mm[1], d, session);
+        auditLog(session, 'asset.update', { target: 'asset', targetId: mm[1], detail: '設備:' + (d.name || '') + (d.status ? ' ｜ 狀態:' + d.status : '') });
+        return ok(res, r);
+    }
+    if (m === 'DELETE' && (mm = /^\/api\/assets\/(\d+)$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.deleteAsset(ctx, mm[1], session);
+        auditLog(session, 'asset.delete', { target: 'asset', targetId: mm[1], targetNo: (r && (r.asset_no || r.assetNo)) || '', detail: '移至回收桶' });
+        return ok(res, { asset: r });
+    }
+    if (m === 'POST' && (mm = /^\/api\/assets\/(\d+)\/restore$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.restoreAsset(ctx, mm[1], session);
+        auditLog(session, 'asset.restore', { target: 'asset', targetId: mm[1], targetNo: (r && r.asset_no) || '', detail: '從回收桶還原' });
+        return ok(res, { asset: r });
+    }
 
     // 維修（資產管理權限）
-    if (m === 'POST' && p === '/api/repairs') { if (!canAsset()) return; return ok(res, await service.createRepair(ctx, await body(req), session)); }
-    if (m === 'POST' && (mm = /^\/api\/repairs\/(\d+)\/complete$/.exec(p))) { if (!canAsset()) return; return ok(res, await service.completeRepair(ctx, mm[1], session)); }
-    if (m === 'DELETE' && (mm = /^\/api\/repairs\/(\d+)$/.exec(p))) { if (!canAsset()) return; return ok(res, { repair: await service.deleteRepair(ctx, mm[1]) }); }
+    if (m === 'POST' && p === '/api/repairs') {
+        if (!canAsset()) return;
+        const d = await body(req);
+        const r = await service.createRepair(ctx, d, session);
+        auditLog(session, 'repair.create', { target: 'asset', targetId: d.asset_id, detail: '送修:' + (d.fault_description || '') + ' ｜ 廠商:' + (d.repair_vendor || '') });
+        return ok(res, r);
+    }
+    if (m === 'POST' && (mm = /^\/api\/repairs\/(\d+)\/complete$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.completeRepair(ctx, mm[1], session);
+        auditLog(session, 'repair.complete', { target: 'repair', targetId: mm[1], detail: '維修完工' });
+        return ok(res, r);
+    }
+    if (m === 'DELETE' && (mm = /^\/api\/repairs\/(\d+)$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.deleteRepair(ctx, mm[1]);
+        auditLog(session, 'repair.delete', { target: 'repair', targetId: mm[1], detail: '刪除維修紀錄' });
+        return ok(res, { repair: r });
+    }
 
     // 轉移（資產管理權限）
-    if (m === 'POST' && p === '/api/transfers') { if (!canAsset()) return; return ok(res, await service.createTransfer(ctx, await body(req), session)); }
-    if (m === 'DELETE' && (mm = /^\/api\/transfers\/(\d+)$/.exec(p))) { if (!canAsset()) return; return ok(res, { transfer: await service.deleteTransfer(ctx, mm[1]) }); }
+    if (m === 'POST' && p === '/api/transfers') {
+        if (!canAsset()) return;
+        const d = await body(req);
+        const r = await service.createTransfer(ctx, d, session);
+        auditLog(session, 'transfer.create', { target: 'asset', targetId: d.asset_id, detail: '轉移至部門:' + (d.to_department || '') + ' ｜ 保管人:' + (d.to_custodian || '') });
+        return ok(res, r);
+    }
+    if (m === 'DELETE' && (mm = /^\/api\/transfers\/(\d+)$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.deleteTransfer(ctx, mm[1]);
+        auditLog(session, 'transfer.delete', { target: 'transfer', targetId: mm[1], detail: '刪除轉移紀錄' });
+        return ok(res, { transfer: r });
+    }
 
     // 廠商（廠商管理權限）
-    if (m === 'POST' && p === '/api/vendors') { if (!canVendor()) return; return ok(res, await service.saveVendor(ctx, await body(req), session)); }
+    if (m === 'POST' && p === '/api/vendors') {
+        if (!canVendor()) return;
+        const d = await body(req);
+        const r = await service.saveVendor(ctx, d, session);
+        auditLog(session, (r && r.created ? 'vendor.create' : 'vendor.update'), { target: 'vendor', targetId: r && r.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') });
+        return ok(res, r);
+    }
     if (m === 'PUT' && (mm = /^\/api\/vendors\/(\d+)$/.exec(p))) {
         if (!canVendor()) return;
         const d = await body(req); d.id = parseInt(mm[1], 10);
-        return ok(res, await service.saveVendor(ctx, d, session));
+        const r = await service.saveVendor(ctx, d, session);
+        auditLog(session, 'vendor.update', { target: 'vendor', targetId: d.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') });
+        return ok(res, r);
     }
-    if (m === 'DELETE' && (mm = /^\/api\/vendors\/(\d+)$/.exec(p))) { if (!canVendor()) return; return ok(res, { vendor: await service.deleteVendor(ctx, mm[1]) }); }
+    if (m === 'DELETE' && (mm = /^\/api\/vendors\/(\d+)$/.exec(p))) {
+        if (!canVendor()) return;
+        const r = await service.deleteVendor(ctx, mm[1]);
+        auditLog(session, 'vendor.delete', { target: 'vendor', targetId: mm[1], targetNo: (r && r.name) || '', detail: '刪除廠商' + ((r && r.name) ? '：' + r.name : '') });
+        return ok(res, { vendor: r });
+    }
 
     // 廠商維護紀錄（廠商管理權限）
-    if (m === 'POST' && p === '/api/vendor-maint') { if (!canVendor()) return; return ok(res, await service.createVendorMaint(ctx, await body(req), session)); }
-    if (m === 'DELETE' && (mm = /^\/api\/vendor-maint\/(\d+)$/.exec(p))) { if (!canVendor()) return; return ok(res, { record: await service.deleteVendorMaint(ctx, mm[1]) }); }
+    if (m === 'POST' && p === '/api/vendor-maint') {
+        if (!canVendor()) return;
+        const d = await body(req);
+        const r = await service.createVendorMaint(ctx, d, session);
+        auditLog(session, 'maint.create', { target: 'vendor_maint', targetId: r && r.id, targetNo: d.vendor_name || '', detail: '廠商:' + (d.vendor_name || '') + ' ｜ 設備:' + (d.equipment || '') + ' ｜ 日期:' + (d.maint_date || '') });
+        return ok(res, r);
+    }
+    if (m === 'DELETE' && (mm = /^\/api\/vendor-maint\/(\d+)$/.exec(p))) {
+        if (!canVendor()) return;
+        const r = await service.deleteVendorMaint(ctx, mm[1]);
+        auditLog(session, 'maint.delete', { target: 'vendor_maint', targetId: mm[1], targetNo: (r && r.vendor_name) || '', detail: '刪除維護紀錄' });
+        return ok(res, { record: r });
+    }
 
     // 欄位管理（全功能）
-    if (m === 'POST' && p === '/api/field-options') { if (!canAdmin()) return; return ok(res, await service.addFieldOption(ctx, await body(req))); }
-    if (m === 'DELETE' && (mm = /^\/api\/field-options\/(\d+)$/.exec(p))) { if (!canAdmin()) return; return ok(res, { option: await service.deleteFieldOption(ctx, mm[1]) }); }
+    if (m === 'POST' && p === '/api/field-options') {
+        if (!canAdmin()) return;
+        const d = await body(req);
+        const r = await service.addFieldOption(ctx, d);
+        auditLog(session, 'field.create', { target: 'field', detail: (d.type === 'department' ? '部門' : '大類') + '：' + (d.label || '') + '（' + (d.code || '') + '）' });
+        return ok(res, r);
+    }
+    if (m === 'DELETE' && (mm = /^\/api\/field-options\/(\d+)$/.exec(p))) {
+        if (!canAdmin()) return;
+        const r = await service.deleteFieldOption(ctx, mm[1]);
+        auditLog(session, 'field.delete', { target: 'field', targetId: mm[1], detail: '刪除欄位選項' });
+        return ok(res, { option: r });
+    }
 
     // 帳號管理（全功能）
-    if (m === 'POST' && p === '/api/users') { if (!canAdmin()) return; return ok(res, await service.createUserAccount(ctx, await body(req))); }
+    if (m === 'POST' && p === '/api/users') {
+        if (!canAdmin()) return;
+        const d = await body(req);
+        const r = await service.createUserAccount(ctx, d);
+        auditLog(session, 'user.create', { target: 'user', targetNo: d.username, detail: '帳號:' + (d.username || '') + ' ｜ 權限:' + (Array.isArray(d.perms) ? d.perms.join(',') : (d.role || '')) });
+        return ok(res, r);
+    }
     if (m === 'PUT' && (mm = /^\/api\/users\/(\d+)$/.exec(p))) {
         if (!canAdmin()) return;
         const uid = parseInt(mm[1], 10);
-        const out = await service.updateUserAccount(ctx, uid, await body(req), { id: session.id });
+        const d = await body(req);
+        const out = await service.updateUserAccount(ctx, uid, d, { id: session.id });
         if (out && out.isActive === false) auth.invalidateUser(uid);            // 停用 → 立即踢出
         else auth.updateUserSessions(uid, { perms: out.perms, role: out.role }); // 改權限 → 直接生效
+        auditLog(session, 'user.update', { target: 'user', targetId: uid, targetNo: out && out.username, detail: '帳號:' + ((out && out.username) || uid) + ' ｜ 權限:' + ((out && out.perms) || []).join(',') + ((out && out.isActive === false) ? ' ｜ 已停用' : '') });
         return ok(res, out);
     }
     if (m === 'POST' && (mm = /^\/api\/users\/(\d+)\/password$/.exec(p))) {
@@ -524,6 +639,7 @@ async function handleWriteApi(req, res, session, p) {
         const d = await body(req);
         const out = await service.resetUserPassword(ctx, uid, d.newPassword);
         if (uid !== session.id) auth.invalidateUser(uid);   // 重設密碼 → 舊登入失效
+        auditLog(session, 'password.reset', { target: 'user', targetId: uid, targetNo: out && out.username, detail: '重設帳號密碼:' + ((out && out.username) || uid) });
         return ok(res, out);
     }
     if (m === 'DELETE' && (mm = /^\/api\/users\/(\d+)$/.exec(p))) {
@@ -531,6 +647,7 @@ async function handleWriteApi(req, res, session, p) {
         const uid = parseInt(mm[1], 10);
         const out = await service.deleteUserAccount(ctx, uid, { id: session.id });
         auth.invalidateUser(uid);
+        auditLog(session, 'user.delete', { target: 'user', targetId: uid, targetNo: out && out.username, detail: '刪除帳號:' + ((out && out.username) || uid) });
         return ok(res, out);
     }
 
@@ -543,7 +660,8 @@ async function handleWriteApi(req, res, session, p) {
         const buf = Buffer.from(b64, 'base64');
         if (!buf.length) throw new Error('檔案內容為空。');
         const result = await service.importAssetsFromXlsx(ctx, buf, d.fileName || 'import.xlsx', session);
-        console.log(`[import] assets by ${session.username}: +${result.inserted}, skipped ${result.skipped}, errors ${result.errors.length}`);
+        auditLog(session, 'import.assets', { target: 'asset', detail: '檔案:' + (d.fileName || '') + ' ｜ 新增:' + result.inserted + ' ｜ 更新:' + result.updated + ' ｜ 失敗:' + result.errors.length });
+        console.log(`[import] assets by ${session.username}: +${result.inserted}, updated ${result.updated}, errors ${result.errors.length}`);
         return ok(res, result);
     }
 
@@ -554,6 +672,7 @@ async function handleWriteApi(req, res, session, p) {
         const buf = Buffer.from(String(d.dataBase64 || ''), 'base64');
         if (!buf.length) throw new Error('沒有收到檔案內容。');
         const result = await service.importVendorsFromXlsx(ctx, buf, d.fileName || 'vendors.xlsx', session);
+        auditLog(session, 'import.vendors', { target: 'vendor', detail: '檔案:' + (d.fileName || '') + ' ｜ 新增:' + result.inserted + ' ｜ 更新:' + result.updated + ' ｜ 失敗:' + result.errors.length });
         console.log(`[import] vendors by ${session.username}: +${result.inserted}, updated ${result.updated}, errors ${result.errors.length}`);
         return ok(res, result);
     }
@@ -565,25 +684,32 @@ async function handleWriteApi(req, res, session, p) {
         const d = await body(req, 60 * 1024 * 1024);
         const kind = (d.kind === 'contract') ? 'contract' : 'nda';
         const result = await service.addVendorFiles(ctx, dataDir, mm[1], kind, d.files || []);
+        auditLog(session, 'vendor.file.upload', { target: 'vendor', targetId: mm[1], detail: '類型:' + (kind === 'contract' ? '採購合約' : 'NDA') + ' ｜ 檔案數:' + ((d.files || []).length) });
         return ok(res, result);
     }
     if (m === 'POST' && (mm = /^\/api\/vendors\/(\d+)\/files\/delete$/.exec(p))) {
         if (!canVendor()) return;
         const d = await body(req);
         const kind = (d.kind === 'contract') ? 'contract' : 'nda';
-        return ok(res, await service.removeVendorFile(ctx, dataDir, mm[1], kind, d.path));
+        const out = await service.removeVendorFile(ctx, dataDir, mm[1], kind, d.path);
+        auditLog(session, 'vendor.file.delete', { target: 'vendor', targetId: mm[1], detail: '刪除附件:' + ((d.path || '').split(/[\\/]/).pop() || '') });
+        return ok(res, out);
     }
 
     // 廠商維護單據 → 廠商管理
     if (m === 'POST' && (mm = /^\/api\/vendor-maint\/(\d+)\/docs$/.exec(p))) {
         if (!canVendor()) return;
         const d = await body(req, 60 * 1024 * 1024);
-        return ok(res, await service.addMaintDocs(ctx, dataDir, mm[1], d.files || []));
+        const out = await service.addMaintDocs(ctx, dataDir, mm[1], d.files || []);
+        auditLog(session, 'maint.doc.upload', { target: 'vendor_maint', targetId: mm[1], detail: '上傳維護單據:' + ((d.files || []).length) + ' 個' });
+        return ok(res, out);
     }
     if (m === 'POST' && (mm = /^\/api\/vendor-maint\/(\d+)\/docs\/delete$/.exec(p))) {
         if (!canVendor()) return;
         const d = await body(req);
-        return ok(res, await service.removeMaintDoc(ctx, dataDir, mm[1], d.path));
+        const out = await service.removeMaintDoc(ctx, dataDir, mm[1], d.path);
+        auditLog(session, 'maint.doc.delete', { target: 'vendor_maint', targetId: mm[1], detail: '刪除維護單據:' + ((d.path || '').split(/[\\/]/).pop() || '') });
+        return ok(res, out);
     }
 
     // 編輯鎖定（依實體對應權限）
@@ -598,7 +724,7 @@ async function handleWriteApi(req, res, session, p) {
     }
 
     // 資料庫還原（全功能）
-    if (m === 'POST' && p === '/api/backup/restore') { if (!canAdmin()) return; return await handleRestoreDb(req, res, session); }
+    if (m === 'POST' && p === '/api/backup/restore') { if (!canAdmin()) return; const out = await handleRestoreDb(req, res, session); return out; }
 
     // 📥 匯入單機版備份（.zip／.db）（全功能）
     if (m === 'POST' && p === '/api/import/desktop-backup') { if (!canAdmin()) return; return await handleImportDesktopBackup(req, res, session); }
@@ -630,6 +756,7 @@ async function handleBackupDownload(res, session) {
     res.setHeader('Content-Disposition', 'attachment; filename="' + ascii + '"');
     res.setHeader('Content-Length', stat.size);
     console.log(`[backup] db download by ${session.username} (${stat.size} bytes)`);
+    auditLog(session, 'backup.db', { target: 'system', detail: '下載資料庫備份（' + Math.round(stat.size / 1024) + ' KB）' });
     fs.createReadStream(dbPath).pipe(res);
 }
 
@@ -655,6 +782,7 @@ async function requestHandler(req, res) {
         if (p.indexOf('/api/') === 0) {
             const session = auth.getSession(req);
             if (!session) return sendJson(res, 401, { ok: false, error: 'unauthenticated', message: '請先登入。' });
+            session.ip = clientIp(req);
 
             // ── 讀取 ──
             if (req.method === 'GET') {
@@ -671,18 +799,50 @@ async function requestHandler(req, res) {
                 }
                 if (p === '/api/vendor-maint') { if (!need(res, session, 'vendor', '廠商管理')) return; return ok(res, { records: await service.listVendorMaint(ctx) }); }
                 if (p === '/api/users') { if (!isAdmin(session)) return denyReadOnly(res); return ok(res, { users: await service.listUsers(ctx) }); }
+                // 📜 使用日誌（全功能）
+                if (p === '/api/logs') {
+                    if (!isAdmin(session)) return denyReadOnly(res);
+                    const q = {
+                        from: parsed.searchParams.get('from') || '',
+                        to: parsed.searchParams.get('to') || '',
+                        username: parsed.searchParams.get('username') || '',
+                        action: parsed.searchParams.get('action') || '',
+                        keyword: parsed.searchParams.get('keyword') || '',
+                        limit: parsed.searchParams.get('limit') || 200,
+                        offset: parsed.searchParams.get('offset') || 0
+                    };
+                    return ok(res, await audit.list(ctx, q));
+                }
+                if (p === '/api/export/logs.xlsx') {
+                    if (!isAdmin(session)) return denyReadOnly(res);
+                    const q = {
+                        from: parsed.searchParams.get('from') || '',
+                        to: parsed.searchParams.get('to') || '',
+                        username: parsed.searchParams.get('username') || '',
+                        action: parsed.searchParams.get('action') || '',
+                        keyword: parsed.searchParams.get('keyword') || ''
+                    };
+                    const rows = await audit.listAll(ctx, q);
+                    const range = (q.from || q.to) ? ((q.from || '最早') + ' ~ ' + (q.to || '最新')) : '';
+                    const r2 = await audit.buildXlsx(rows, { range: range });
+                    auditLog(session, 'export.logs', { target: 'system', detail: '匯出使用日誌 ' + r2.count + ' 筆' });
+                    return sendXlsx(res, r2.buffer, '使用日誌_' + r2.stamp + '.xlsx', 'Activity_Logs_' + r2.stamp + '.xlsx');
+                }
                 if (p === '/api/export/inventory.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'asset')) return denyPerm(res, '一般查詢與報表匯出 或 資產管理');
+                    auditLog(session, 'export.inventory', { target: 'report', detail: '匯出盤點總表' });
                     return await handleExportInventory(res, session);
                 }
                 if (p === '/api/export/assets-sheet.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'asset')) return denyPerm(res, '一般查詢與報表匯出 或 資產管理');
                     const r2 = await extras.buildAssetDataXlsx(ctx);
+                    auditLog(session, 'export.assets_sheet', { target: 'report', detail: '匯出資產資料表 ' + r2.count + ' 筆' });
                     return sendXlsx(res, r2.buffer, 'IT_資產資料表_' + r2.stamp + '.xlsx', 'IT_Asset_Data_Sheet_' + r2.stamp + '.xlsx');
                 }
                 if (p === '/api/export/vendors-sheet.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'vendor')) return denyPerm(res, '一般查詢與報表匯出 或 廠商管理');
                     const r2 = await extras.buildVendorDataXlsx(ctx);
+                    auditLog(session, 'export.vendors_sheet', { target: 'report', detail: '匯出廠商資料表 ' + r2.count + ' 家' });
                     return sendXlsx(res, r2.buffer, 'IT_廠商資料表_' + r2.stamp + '.xlsx', 'IT_Vendor_Data_Sheet_' + r2.stamp + '.xlsx');
                 }
                 if (p === '/api/backup/db') return await handleBackupDownload(res, session);
@@ -697,12 +857,14 @@ async function requestHandler(req, res) {
                 if (p === '/api/export/vendors.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'vendor')) return denyPerm(res, '一般查詢與報表匯出 或 廠商管理');
                     const r2 = await extras.buildVendorListXlsx(ctx);
+                    auditLog(session, 'export.vendor_list', { target: 'report', detail: '匯出廠商清單' });
                     return sendXlsx(res, r2.buffer, 'IT_合作廠商清單_' + r2.stamp + '.xlsx', 'IT_Vendor_List_' + r2.stamp + '.xlsx');
                 }
                 if (p === '/api/export/vendor-maint.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'vendor')) return denyPerm(res, '一般查詢與報表匯出 或 廠商管理');
                     const name = String(parsed.searchParams.get('name') || '');
                     const r2 = await extras.buildVendorMaintXlsx(ctx, name);
+                    auditLog(session, 'export.vendor_maint', { target: 'report', detail: '匯出維護歷程' + (name ? '：' + name : '（全部）') });
                     return sendXlsx(res, r2.buffer, '廠商維護歷程' + (name ? '_' + name : '') + '_' + r2.stamp + '.xlsx', 'Vendor_Maint_' + r2.stamp + '.xlsx');
                 }
                 if (p === '/api/template/assets.xlsx') {
@@ -719,6 +881,7 @@ async function requestHandler(req, res) {
                 if (mHist) {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'asset')) return denyPerm(res, '一般查詢與報表匯出 或 資產管理');
                     const r2 = await extras.buildAssetHistoryXlsx(ctx, mHist[1]);
+                    auditLog(session, 'export.asset_history', { target: 'asset', targetId: mHist[1], targetNo: r2.assetNo, detail: '匯出資產履歷：' + (r2.assetNo || '') });
                     return sendXlsx(res, r2.buffer, '資產履歷_' + r2.assetNo + '.xlsx', 'Asset_History_' + r2.stamp + '.xlsx');
                 }
                 const mDetail = /^\/api\/assets\/(\d+)$/.exec(p);
@@ -730,7 +893,9 @@ async function requestHandler(req, res) {
             // ── 修改自己的密碼（一般使用者也可）──
             if (req.method === 'POST' && p === '/api/me/password') {
                 const d = await body(req);
-                return ok(res, await service.changeOwnPassword(ctx, session.id, d.currentPassword, d.newPassword));
+                const out = await service.changeOwnPassword(ctx, session.id, d.currentPassword, d.newPassword);
+                auditLog(session, 'password.change', { target: 'user', targetId: session.id, targetNo: session.username, detail: '修改自己的密碼' });
+                return ok(res, out);
             }
 
             // ── 其他寫入（需管理者）──
@@ -773,6 +938,7 @@ async function start() {
     dbq = ctx;
     try { await ctx.exec('PRAGMA journal_mode = WAL'); } catch (e) {}
     await service.ensureSchema(ctx);
+    await audit.ensureSchema(ctx);
     const sessionCount = await auth.init(makeSessionStore(ctx));
 
     const server = http.createServer((req, res) => { requestHandler(req, res); });
