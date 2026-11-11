@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "web": "node server.js",
     "dev": "node server.js",
     "release:pack": "node scripts/pack-release.mjs",
     "release:patch": "npm version patch && node scripts/release.mjs",

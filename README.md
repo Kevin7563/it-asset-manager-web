@@ -32,8 +32,10 @@
 ```powershell
 cd d:\it-asset-manager-web
 npm install
-npm start
+npm start          # 也可以 npm run web（舊習慣相容）
 ```
+
+- 或直接雙擊 `start.bat`
 
 - 預設帳號：`admin` / `5508888`（全功能）、`User` / `1234`（一般查詢與報表匯出）
 - 🔒 第一次登入後請立刻更換 `admin` 密碼

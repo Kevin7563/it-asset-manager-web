@@ -4,6 +4,16 @@
 
 ---
 
+## [1.0.3] - 2026-11-11
+
+### 新增 `npm run web` 別名（與舊專案習慣相容）
+
+- 🛠️ `package.json` 新增 `"web": "node server.js"`，因此 `npm start` 與 `npm run web` 都可以啟動
+- 📖 README／`docs\安裝與啟動.md` 補充說明
+- 提醒：`npm run web` 在**舊專案**（`it-asset-manager`）才是這樣用；新專案請在 `it-asset-manager-web` 資料夾執行
+
+---
+
 ## [1.0.2] - 2026-11-11
 
 ### 修正：線上更新會一併更新 `start.bat`
