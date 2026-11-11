@@ -72,7 +72,8 @@ updates\                          線上更新下載與暫存
 npm run release:patch     # 或 release:minor / release:major
 ```
 
-推送標籤後 GitHub Actions 會自動打包 `it-asset-manager-web-vX.Y.Z.zip` 並建立 Release（詳見 `docs\更新與版本管理.md`）。
+腳本會自動：commit → push 分支與 `vX.Y.Z` 標籤 → 打包 `out\it-asset-manager-web-vX.Y.Z.zip` → 用 gh CLI 建立 GitHub Release（附上 ZIP）。
+Web 版的「🔄 檢查更新」就是讀這個 Release（詳見 `docs\更新與版本管理.md`）。
 
 ## 🧩 權限
 
