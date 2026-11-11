@@ -44,6 +44,18 @@ echo [2/2] 啟動服務（關閉本視窗即停止服務）...
 echo       瀏覽器會自動開啟（預設 http://localhost:3010；若已改 port 請見 config.json）
 echo       預設帳號：admin / 5508888（請登入後立即修改密碼）
 echo.
+
+rem 先檢查預設連接埠 3010 是否已有服務在執行，避免重複啟動造成 EADDRINUSE
+netstat -ano | findstr ":3010" | findstr "LISTENING" >nul 2>nul
+if not errorlevel 1 (
+    echo [資訊] 連接埠 3010 已經有服務在執行，直接開啟瀏覽器即可。
+    start "" http://localhost:3010
+    echo        若要重新啟動，請先關閉原本的服務視窗後再執行本檔案。
+    echo.
+    pause
+    exit /b 0
+)
+
 start "" http://localhost:3010
 node server.js
 

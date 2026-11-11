@@ -943,6 +943,21 @@ async function start() {
 
     const server = http.createServer((req, res) => { requestHandler(req, res); });
     server.on('error', (err) => {
+        const code = err && err.code;
+        if (code === 'EADDRINUSE') {
+            console.error('');
+            console.error('❌ 啟動失敗：連接埠 ' + CONFIG.port + ' 已經被占用。');
+            console.error('   通常是「已經有一個服務在執行」（例如先前開著的命令視窗或 start.bat）。');
+            console.error('');
+            console.error('   建議做法：');
+            console.error('   ① 先開瀏覽器確認：http://localhost:' + CONFIG.port);
+            console.error('      → 若打得開，代表服務已在跑，直接使用即可（不必再啟動）。');
+            console.error('   ② 或關閉舊的服務視窗（該視窗按 Ctrl+C 或直接關閉）後，再執行 npm start。');
+            console.error('   ③ 或改用其他連接埠：set WEB_PORT=3011 後再 npm start');
+            console.error('      （若改過連接埠，瀏覽器要改成 http://localhost:3011）');
+            console.error('');
+            process.exit(1);
+        }
         console.error('❌ 伺服器啟動失敗：' + (err && err.message ? err.message : err));
         process.exit(1);
     });
