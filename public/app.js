@@ -1816,6 +1816,59 @@
         toast('⚠️ 服務未自動重新啟動，請手動執行 npm start', 'warn');
     }
 
+    // ── 資料修復（一次性）────────────────────────────────
+    function repairPayload(extra) {
+        return Object.assign({
+            renumber: $('repair-renumber') ? $('repair-renumber').checked : true,
+            fixNotes: $('repair-fixnotes') ? $('repair-fixnotes').checked : true
+        }, extra || {});
+    }
+
+    function renderRepairResult(r, isDry) {
+        const box = $('repair-result');
+        if (!box) return;
+        const sample = (r.sample || []).map(x => esc(x.oldNo) + ' → <b>' + esc(x.newNo) + '</b>').join('<br>');
+        box.classList.remove('hidden');
+        box.innerHTML = '<strong style="color:' + (isDry ? '#b45309' : '#15803d') + ';">'
+            + (isDry ? '🔍 預覽結果（尚未變更資料）' : '✅ 資料修復完成') + '</strong>'
+            + '<div>資產總數：' + (r.totalAssets || 0) + ' 筆</div>'
+            + '<div>需重新編號：<b>' + (r.renumbered || 0) + '</b> 筆　｜　重複備註可清除：<b>' + (r.notesCleared || 0) + '</b> 筆</div>'
+            + (sample ? '<div style="margin-top:6px;font-size:12px;color:#334155;line-height:1.8;">編號變更範例：<br>' + sample + '</div>' : '')
+            + (r.safety ? '<div style="font-size:12px;margin-top:6px;">修復前備份：<code>' + esc(r.safety) + '</code></div>' : '')
+            + (isDry ? '<div style="font-size:12px;color:#64748b;">確認無誤後按「✅ 執行修復」。</div>'
+                : '<div style="font-size:12px;color:#64748b;">請按 F5 重新整理，或按「🔄 重新整理」查看最新編號。</div>');
+    }
+
+    async function previewRepair() {
+        const btn = $('repair-preview-btn');
+        btn.disabled = true;
+        const old = btn.textContent;
+        btn.textContent = '⏳ 檢查中...';
+        try {
+            const r = await post('/api/maintenance/repair-data', repairPayload({ dryRun: true }));
+            renderRepairResult(r, true);
+            toast('🔍 預覽完成：編號 ' + (r.renumbered || 0) + ' 筆、備註 ' + (r.notesCleared || 0) + ' 筆', 'info');
+        } catch (err) {
+            toast('❌ 預覽失敗：' + err.message, 'err');
+        } finally { btn.disabled = false; btn.textContent = old; }
+    }
+
+    async function runRepair() {
+        if (!confirmBox('🧰 確定要執行資料修復嗎？\n\n• 會依「採購日期」重新產生所有資產編號\n• 會清除與「資產規格/備註」相同的「維運備註說明」\n• 系統會先自動備份資料庫到 backups\\\n\n此動作無法復原（可用備份還原）。')) return;
+        const btn = $('repair-run-btn');
+        btn.disabled = true;
+        const old = btn.textContent;
+        btn.textContent = '⏳ 修復中...';
+        try {
+            const r = await post('/api/maintenance/repair-data', repairPayload({ confirm: 'REPAIR' }));
+            renderRepairResult(r, false);
+            toast('✅ 資料修復完成：編號 ' + (r.renumbered || 0) + ' 筆、備註 ' + (r.notesCleared || 0) + ' 筆', 'ok');
+            await Promise.all([loadAssets(), loadStats()]).catch(() => {});
+        } catch (err) {
+            toast('❌ 修復失敗：' + err.message, 'err');
+        } finally { btn.disabled = false; btn.textContent = old; }
+    }
+
     async function loadVersionInfo() {
         const box = $('version-info');
         if (!box) return;
@@ -1928,6 +1981,8 @@
         $('update-check-btn').addEventListener('click', checkUpdate);
         $('update-download-btn').addEventListener('click', downloadUpdate);
         $('update-apply-btn').addEventListener('click', applyUpdate);
+        $('repair-preview-btn').addEventListener('click', previewRepair);
+        $('repair-run-btn').addEventListener('click', runRepair);
 
         // 報表與附件
         $('export-vendors-btn').addEventListener('click', exportVendors);

@@ -16,6 +16,7 @@ const { buildInventoryXlsx } = require('./lib/export-inventory');
 const extras = require('./lib/export-extras');
 const filesLib = require('./lib/files');
 const importer = require('./lib/importer');
+const repair = require('./lib/repair');
 const updater = require('./lib/updater');
 
 const APP_ROOT = __dirname;
@@ -353,6 +354,35 @@ async function handleUpdateRestart(res, session) {
     setTimeout(() => { try { updater.scheduleRestart(); } catch (e) { console.error('[update] restart failed: ' + (e.message || e)); } }, 300);
 }
 
+// ── 資料修復（一次性：重新編號／清除重複備註）──────────
+async function handleRepairData(req, res, session) {
+    if (!isAdmin(session)) return denyReadOnly(res);
+    const d = await body(req);
+    const dryRun = !!d.dryRun;
+    if (!dryRun && String(d.confirm || '').trim().toUpperCase() !== 'REPAIR') {
+        throw new Error('請在確認欄輸入 REPAIR 才會執行修復。');
+    }
+    let safety = '';
+    if (!dryRun) {
+        const dbPath = path.resolve(CONFIG.dbPath);
+        const dir = path.dirname(dbPath);
+        const backupsDir = path.join(dir, 'backups');
+        filesLib.ensureDir(backupsDir);
+        try { await ctx.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch (e) {}
+        safety = path.join(backupsDir, 'repair_before_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '') + '.db');
+        fs.copyFileSync(dbPath, safety);
+    }
+    const out = await repair.repairData(ctx, {
+        dryRun: dryRun,
+        fixNotes: d.fixNotes !== false,
+        renumber: d.renumber !== false
+    });
+    if (!dryRun) {
+        console.log(`[repair] by ${session.username}: notes=${out.notesCleared} renumbered=${out.renumbered} backup=${safety}`);
+    }
+    return ok(res, Object.assign({}, out, { safety: safety }));
+}
+
 // ── 版本資訊 ───────────────────────────────────────────
 async function handleVersionInfo(res, session) {
     if (!isAdmin(session)) return denyReadOnly(res);
@@ -574,6 +604,9 @@ async function handleWriteApi(req, res, session, p) {
     if (m === 'POST' && p === '/api/import/desktop-backup') { if (!canAdmin()) return; return await handleImportDesktopBackup(req, res, session); }
     // 🔧 附件路徑修復（全功能）
     if (m === 'POST' && p === '/api/import/attachments') { if (!canAdmin()) return; return await handleRepairAttachments(req, res, session); }
+
+    // 🔧 資料修復（全功能）
+    if (m === 'POST' && p === '/api/maintenance/repair-data') { if (!canAdmin()) return; return await handleRepairData(req, res, session); }
 
     // 🔄 線上更新（全功能）
     if (m === 'POST' && p === '/api/update/download') { if (!canAdmin()) return; return await handleUpdateDownload(res, session); }

@@ -515,6 +515,22 @@
                         </div>
                         <div id="att-fix-result" class="result-box hidden"></div>
                     </div>
+                    <div class="card" style="border-left:4px solid #f59e0b;">
+                        <h3 class="card-title">🧰 資料修復（一次性工具）</h3>
+                        <div class="tip-mini">
+                            📌 用於修正舊版匯入造成的資料問題：<br>
+                            ① <b>重新產生資產編號</b>：改為「類別-部門-<b>採購日期</b>-流水號」（若編號中間是建檔日期＝今天，可用此修正）<br>
+                            ② <b>清除重複的維運備註</b>：把「維運備註說明」誤存成與「資產規格/備註」相同的內容清空<br>
+                            ⚠️ 執行前會自動備份資料庫到 <code>backups\repair_before_*.db</code>；建議先按「🔍 預覽」確認筆數。
+                        </div>
+                        <div class="inline-form">
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="repair-renumber" checked> 重新產生資產編號（依採購日期）</label>
+                            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;"><input type="checkbox" id="repair-fixnotes" checked> 清除重複的維運備註</label>
+                            <button type="button" class="btn btn-ghost" id="repair-preview-btn">🔍 預覽</button>
+                            <button type="button" class="btn btn-danger" id="repair-run-btn">✅ 執行修復</button>
+                        </div>
+                        <div id="repair-result" class="result-box hidden"></div>
+                    </div>
                     <div class="card" style="border-left:4px solid #ef4444;">
                         <h3 class="card-title" style="color:#b91c1c;">♻️ 資料庫還原（危險操作）</h3>
                         <div class="tip-mini warn">⚠️ 還原會<b>覆蓋目前所有資料</b>。系統會先自動備份目前資料庫到資料夾下的 <code>backups</code>。請在確認欄輸入 <b>RESTORE</b> 才會執行。</div>
