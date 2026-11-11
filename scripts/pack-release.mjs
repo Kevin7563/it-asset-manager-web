@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8'));
 const version = pkg.version;
 
-const FILES = ['server.js', 'package.json', 'config.json.example', 'README.md', 'CHANGELOG.md'];
+const FILES = ['server.js', 'package.json', 'config.json.example', 'README.md', 'CHANGELOG.md', 'start.bat'];
 const DIRS = ['lib', 'public', 'docs', 'scripts'];
 
 const entries = [];

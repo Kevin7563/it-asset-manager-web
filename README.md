@@ -19,16 +19,26 @@
 
 ## 🚀 快速開始
 
+### 新電腦安裝（3 步）
+
+1. **安裝 Node.js LTS**（20 或 22 以上）：https://nodejs.org/
+2. **取得程式**：到 [Releases](https://github.com/Kevin7563/it-asset-manager-web/releases) 下載 `it-asset-manager-web-vX.Y.Z.zip`，解壓到固定資料夾（例如 `D:\it-asset-manager-web`）
+3. **雙擊 `start.bat`**：第一次會自動 `npm install`，完成後自動開啟 http://localhost:3010
+
+> 完整圖文步驟（含區網連線、防火牆、開機自動啟動、常見問題）請看 **[docs\安裝與啟動.md](docs/安裝與啟動.md)**
+
+### 手動啟動
+
 ```powershell
 cd d:\it-asset-manager-web
 npm install
 npm start
 ```
 
-開啟 http://localhost:3010
-
 - 預設帳號：`admin` / `5508888`（全功能）、`User` / `1234`（一般查詢與報表匯出）
+- 🔒 第一次登入後請立刻更換 `admin` 密碼
 - 第一次啟動若找不到資料庫，會**自動建立** `data\asset_data.db` 並寫入預設帳號與欄位選項
+- 區網其他電腦／手機：`http://<伺服器IP>:3010`（記得在 Windows 防火牆允許 Node.js）
 
 ## ⚙️ 設定
 
