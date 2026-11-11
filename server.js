@@ -675,6 +675,16 @@ async function requestHandler(req, res) {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'asset')) return denyPerm(res, '一般查詢與報表匯出 或 資產管理');
                     return await handleExportInventory(res, session);
                 }
+                if (p === '/api/export/assets-sheet.xlsx') {
+                    if (!hasPerm(session, 'query') && !hasPerm(session, 'asset')) return denyPerm(res, '一般查詢與報表匯出 或 資產管理');
+                    const r2 = await extras.buildAssetDataXlsx(ctx);
+                    return sendXlsx(res, r2.buffer, 'IT_資產資料表_' + r2.stamp + '.xlsx', 'IT_Asset_Data_Sheet_' + r2.stamp + '.xlsx');
+                }
+                if (p === '/api/export/vendors-sheet.xlsx') {
+                    if (!hasPerm(session, 'query') && !hasPerm(session, 'vendor')) return denyPerm(res, '一般查詢與報表匯出 或 廠商管理');
+                    const r2 = await extras.buildVendorDataXlsx(ctx);
+                    return sendXlsx(res, r2.buffer, 'IT_廠商資料表_' + r2.stamp + '.xlsx', 'IT_Vendor_Data_Sheet_' + r2.stamp + '.xlsx');
+                }
                 if (p === '/api/backup/db') return await handleBackupDownload(res, session);
                 if (p === '/api/backup/files') return await handleFilesZip(res, session);
                 if (p === '/api/version') return await handleVersionInfo(res, session);

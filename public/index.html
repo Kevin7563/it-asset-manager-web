@@ -440,40 +440,39 @@
 
                 <!-- 匯入 / 備份 -->
                 <section id="page-tools" class="page hidden">
-                    <div class="card">
-                        <h3 class="card-title">📥 匯入資產資料（Excel）</h3>
-                        <div class="tip-mini">📌 支援系統範本格式的 .xlsx：欄位標題列需有「設備/項目名稱」與「資產大類」；重複的「原廠序列號」會自動略過。</div>
+                    <div class="card" style="border-left:4px solid #0ea5e9;">
+                        <h3 class="card-title">📦 資產資料表匯入／匯出</h3>
+                        <div class="tip-mini">
+                            📌 <b>📤 匯出資產資料</b>：產生與匯入相同格式的 Excel（含「資產編號」「所屬部門」），可直接修改內容後重新匯入。<br>
+                            📌 <b>📂 匯入</b>：有「資產編號」→ 更新該筆；沒有編號但「原廠序列號」已存在 → 更新該筆；都沒有 → 新增（自動產生編號）。<br>
+                            ⚠️ 更新時以檔案內容為準（留空＝清空該欄）；變更大類或部門會重新產生資產編號。
+                        </div>
                         <div class="inline-form">
-                            <input type="file" id="import-file" accept=".xlsx" style="flex-grow:1;">
-                            <button type="button" class="btn btn-primary" id="import-btn">📂 開始匯入</button>
+                            <input type="file" id="import-file" accept=".xlsx" style="flex-grow:1;min-width:220px;">
+                            <button type="button" class="btn btn-primary" id="import-btn">📂 匯入（新增／更新）</button>
+                            <button type="button" class="btn btn-success" id="export-asset-sheet-btn">📤 匯出資產資料</button>
+                            <button type="button" class="btn btn-ghost" id="tpl-assets-btn">⬇️ 空白範本</button>
                         </div>
                         <div id="import-result" class="result-box hidden"></div>
+                    </div>
+                    <div class="card" style="border-left:4px solid #8b5cf6;">
+                        <h3 class="card-title">🏢 廠商資料表匯入／匯出</h3>
+                        <div class="tip-mini">
+                            📌 <b>📤 匯出廠商資料</b>：產生與匯入相同格式的 Excel，可直接修改後重新匯入。<br>
+                            📌 <b>📂 匯入</b>：以「廠商公司名稱」為鍵，不存在＝新增、已存在＝更新（空白欄位不會清掉原有內容）。
+                        </div>
+                        <div class="inline-form">
+                            <input type="file" id="import-vendor-file" accept=".xlsx" style="flex-grow:1;min-width:220px;">
+                            <button type="button" class="btn btn-primary" id="import-vendor-btn">📂 匯入（新增／更新）</button>
+                            <button type="button" class="btn btn-success" id="export-vendor-sheet-btn">📤 匯出廠商資料</button>
+                            <button type="button" class="btn btn-ghost" id="tpl-vendors-btn">⬇️ 空白範本</button>
+                        </div>
+                        <div id="import-vendor-result" class="result-box hidden"></div>
                     </div>
                     <div class="card">
                         <h3 class="card-title">💾 資料庫備份</h3>
                         <div class="tip-mini">🛡️ 下載目前資料庫檔案（SQLite）。建議定期下載並保存到其他磁碟或 NAS。</div>
                         <button type="button" class="btn btn-success" id="backup-btn">⬇️ 下載資料庫備份</button>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">📊 匯出報表</h3>
-                        <div class="tip-mini">📋 盤點總表（含條碼貼紙欄）可直接在「總覽看板」右上角匯出。</div>
-                        <button type="button" class="btn btn-ghost" id="goto-dashboard">前往總覽看板</button>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">🏢 匯入廠商資料（Excel）</h3>
-                        <div class="tip-mini">📌 以「廠商公司名稱」為鍵：不存在＝新增、已存在＝更新（空白欄位不會清掉原有內容）。</div>
-                        <div class="inline-form">
-                            <input type="file" id="import-vendor-file" accept=".xlsx" style="flex-grow:1;">
-                            <button type="button" class="btn btn-primary" id="import-vendor-btn">📂 開始匯入</button>
-                        </div>
-                        <div id="import-vendor-result" class="result-box hidden"></div>
-                    </div>
-                    <div class="card">
-                        <h3 class="card-title">📄 匯入範本下載</h3>
-                        <div class="inline-form">
-                            <button type="button" class="btn btn-ghost" id="tpl-assets-btn">⬇️ 資產匯入範本</button>
-                            <button type="button" class="btn btn-ghost" id="tpl-vendors-btn">⬇️ 廠商匯入範本</button>
-                        </div>
                     </div>
                     <div class="card">
                         <h3 class="card-title">📎 附件檔備份</h3>

@@ -1273,18 +1273,41 @@
             if (box) {
                 box.classList.remove('hidden');
                 box.innerHTML = '<strong>✅ 匯入完成</strong><div>檔案：' + esc(res.fileName || file.name) + '</div>'
-                    + '<div>新增 <b>' + res.inserted + '</b> 筆　｜　略過（重複序號）<b>' + res.skipped + '</b> 筆　｜　失敗 <b>' + errs.length + '</b> 筆</div>'
+                    + '<div>新增 <b>' + (res.inserted || 0) + '</b> 筆　｜　更新 <b>' + (res.updated || 0) + '</b> 筆　｜　失敗 <b>' + errs.length + '</b> 筆</div>'
                     + (errs.length ? '<div style="margin-top:8px;color:#b91c1c;">' + errs.slice(0, 10).map(x => '第 ' + x.row + ' 列：' + esc(x.message)).join('<br>') + (errs.length > 10 ? '<br>…還有 ' + (errs.length - 10) + ' 筆' : '') + '</div>' : '');
             }
-            toast('✅ 匯入完成：新增 ' + res.inserted + ' 筆', 'ok');
+            toast('✅ 匯入完成：新增 ' + (res.inserted || 0) + ' 筆、更新 ' + (res.updated || 0) + ' 筆', 'ok');
             input.value = '';
-            await loadAssets();
+            await Promise.all([loadAssets(), loadStats()]).catch(() => {});
         } catch (err) {
             if (box) { box.classList.remove('hidden'); box.innerHTML = '<strong style="color:#b91c1c;">❌ 匯入失敗</strong><div>' + esc(err.message) + '</div>'; }
             toast('❌ 匯入失敗：' + err.message, 'err');
         } finally {
-            btn.disabled = false; btn.textContent = '📂 開始匯入';
+            btn.disabled = false; btn.textContent = '📂 匯入（新增／更新）';
         }
+    }
+
+    // ── 資料表匯出（可直接修改後重新匯入）──────────────
+    async function exportAssetSheet() {
+        const btn = $('export-asset-sheet-btn');
+        const old = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ 匯出中...';
+        try {
+            await downloadBlob('/api/export/assets-sheet.xlsx', '資產資料表.xlsx');
+            toast('📤 資產資料表已開始下載（可修改後重新匯入）', 'ok');
+        } catch (err) { toast('❌ ' + err.message, 'err'); }
+        finally { btn.disabled = false; btn.textContent = old; }
+    }
+
+    async function exportVendorSheet() {
+        const btn = $('export-vendor-sheet-btn');
+        const old = btn.textContent;
+        btn.disabled = true; btn.textContent = '⏳ 匯出中...';
+        try {
+            await downloadBlob('/api/export/vendors-sheet.xlsx', '廠商資料表.xlsx');
+            toast('📤 廠商資料表已開始下載（可修改後重新匯入）', 'ok');
+        } catch (err) { toast('❌ ' + err.message, 'err'); }
+        finally { btn.disabled = false; btn.textContent = old; }
     }
 
     async function downloadBackup() {
@@ -1578,7 +1601,7 @@
             if (box) { box.classList.remove('hidden'); box.innerHTML = '<strong style="color:#b91c1c;">❌ 匯入失敗</strong><div>' + esc(err.message) + '</div>'; }
             toast('❌ 匯入失敗：' + err.message, 'err');
         } finally {
-            btn.disabled = false; btn.textContent = '📂 開始匯入';
+            btn.disabled = false; btn.textContent = '📂 匯入（新增／更新）';
         }
     }
 
@@ -1968,9 +1991,10 @@
 
         // 工具
         $('import-btn').addEventListener('click', importAssets);
-        $('backup-btn').addEventListener('click', downloadBackup);
-        $('goto-dashboard').addEventListener('click', () => showPage('dashboard'));
         $('import-vendor-btn').addEventListener('click', importVendorsExcel);
+        $('export-asset-sheet-btn').addEventListener('click', exportAssetSheet);
+        $('export-vendor-sheet-btn').addEventListener('click', exportVendorSheet);
+        $('backup-btn').addEventListener('click', downloadBackup);
         $('backup-files-btn').addEventListener('click', downloadAttachmentsZip);
         $('restore-btn').addEventListener('click', restoreDatabase);
         $('import-backup-btn').addEventListener('click', importDesktopBackupFiles);
