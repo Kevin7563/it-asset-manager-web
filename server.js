@@ -969,6 +969,14 @@ async function start() {
     server.listen(CONFIG.port, CONFIG.host, () => {
         console.log('=========================================================');
         console.log('  ' + APP_NAME + ' — Web 版（完整功能）v' + APP_VERSION);
+        const envNotes = [];
+        if (String(process.env.WEB_PORT || '').trim()) envNotes.push('WEB_PORT=' + process.env.WEB_PORT);
+        if (String(process.env.WEB_HOST || '').trim()) envNotes.push('WEB_HOST=' + process.env.WEB_HOST);
+        if (String(process.env.WEB_DB || '').trim()) envNotes.push('WEB_DB=' + process.env.WEB_DB);
+        if (envNotes.length) {
+            console.log('  ⚠️ 環境變數覆寫中：' + envNotes.join('、'));
+            console.log('     （若這不是你要的設定，請關閉本視窗後「新開終端機」再啟動，或執行 Remove-Item Env:WEB_PORT）');
+        }
         console.log('  本機網址：http://localhost:' + CONFIG.port);
         console.log('  區網網址：http://<本機IP>:' + CONFIG.port);
         console.log('  資料庫  ：' + dbPath + '（' + (DB_SOURCE_LABEL[CONFIG.dbSource] || CONFIG.dbSource) + '）');
