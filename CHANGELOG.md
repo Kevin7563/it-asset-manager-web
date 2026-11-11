@@ -16,6 +16,15 @@
 - 側邊選單順序：🧩 欄位管理 → 👥 帳號管理 → 📜 使用日誌 → 🔄 版本與更新 → 📥 匯入／備份。
 - 相關文件（README、`docs\安裝與啟動.md`、`docs\更新與版本管理.md`）已同步更新操作路徑。
 
+### 新增：可攜版打包（新電腦免安裝 Node.js）
+
+- 新增指令 **`npm run release:portable`** → 產出 `out/it-asset-manager-web-portable-v<版本>.zip`
+  - 內含 `node.exe`（Node.js 執行檔）＋ `node_modules`（sqlite3 原生模組、exceljs 等）
+  - 內含可攜版專用 `start.bat`（優先用資料夾內的 `node.exe`，不需 `npm install`）與 `安裝與啟動.txt`
+  - 說明：解壓縮 → 雙擊 `start.bat` → 瀏覽器 `http://localhost:3010`，第一次啟動自動建立 `data\asset_data.db`
+- 可攜版 `start.bat` 支援 `--no-browser` 參數（供背景／自動啟動使用）
+- 實測：在「PATH 移除系統 Node.js」的環境下解壓啟動成功（v1.4.2、sqlite3 正常、預設帳號可登入）
+
 
 
 ### 修正：啟動時若「連接埠被占用」會看不懂錯誤

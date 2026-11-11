@@ -13,6 +13,7 @@
     "web": "node server.js",
     "dev": "node server.js",
     "release:pack": "node scripts/pack-release.mjs",
+    "release:portable": "node scripts/pack-portable.mjs",
     "repair:data": "node scripts/repair-data.mjs",
     "release:patch": "npm version patch && node scripts/release.mjs",
     "release:minor": "npm version minor && node scripts/release.mjs",

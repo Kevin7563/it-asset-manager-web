@@ -20,7 +20,17 @@
 
 ## 🚀 快速開始
 
-### 新電腦安裝（3 步）
+### 方式 A：可攜版（免安裝 Node.js）⭐ 新電腦最省事
+
+1. 下載 `it-asset-manager-web-portable-vX.Y.Z.zip`（約 44 MB，已內含 Node.js 與相依套件）
+2. 解壓縮到固定資料夾（例如 `D:\IT資產管理系統`）
+3. 雙擊 **`start.bat`** → 自動開啟 <http://localhost:3010>
+
+- 不需要安裝 Node.js、不需要 `npm install`、不需要網路
+- 第一次啟動會自動建立 `data\asset_data.db`（預設 `admin` / `5508888`、`User` / `1234`）
+- 詳細說明見解壓後的 **`安裝與啟動.txt`**
+
+### 方式 B：程式檔 + 自行安裝 Node.js
 
 1. **安裝 Node.js LTS**（20 或 22 以上）：https://nodejs.org/
 2. **取得程式**：到 [Releases](https://github.com/Kevin7563/it-asset-manager-web/releases) 下載 `it-asset-manager-web-vX.Y.Z.zip`，解壓到固定資料夾（例如 `D:\it-asset-manager-web`）
