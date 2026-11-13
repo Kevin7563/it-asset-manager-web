@@ -4,6 +4,25 @@
 
 ---
 
+## [1.5.1] - 2026-11-13
+
+### 修正：線上更新後 `start.bat` 找不到 `scripts\launch.ps1`（會無法啟動）
+
+- 原因：`scripts\`（`launch.ps1`／`tray.ps1`／`app-common.ps1`／`install.ps1`）是 v1.5.0 新增，但「線上更新」只套用 `lib/`、`public/`、`docs/` 與固定檔案，**沒有包含 `scripts\` 與 `install.bat`**；從舊版線上更新後，新的 `start.bat` 會找不到 `scripts\launch.ps1` 而停止。
+- 修正：
+  - 更新清單加入 **`scripts/`** 與 **`install.bat`**（今後線上更新會一併更新常駐程式與安裝腳本；更新前備份也包含這些檔案）。
+  - `start.bat` 新增**降級模式**：若找不到 `scripts\launch.ps1`，會自動改用「主控台模式」啟動（功能不受影響），不會完全無法使用；重新下載 ZIP 或執行 `install.bat` 即可恢復背景＋系統匣模式。
+
+### 修正：Release 同時附上「可攜版 ZIP」時，線上更新可能抓錯檔案
+
+- `pickAsset()` 現在**優先選擇程式檔** `it-asset-manager-web-vX.Y.Z.zip`，並排除 `...-portable-...zip`（可攜版約 43 MB，內含 `node.exe`／`node_modules`，不適合作為線上更新檔）。
+
+### 備註
+
+- v1.5.1 的 GitHub Release 只附上「程式檔 ZIP」，避免舊版（1.5.0 以前）的更新程式誤抓可攜版；可攜版請由 v1.5.0 Release 下載。
+
+---
+
 ## [1.5.0] - 2026-11-13
 
 ### 新增：背景執行＋系統匣常駐（不再有黑色命令視窗）
