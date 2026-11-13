@@ -44,9 +44,10 @@
         locks: { asset: {}, vendor: {} }, lockedAsset: 0, lockedVendor: 0,
         perms: [],
         logs: { rows: [], total: 0, offset: 0, limit: 30 },
-        vendorKeyword: '', vendorEditKeyword: '', maintKeyword: '', pendingVendorId: 0, vendorModalId: 0,
+        vendorKeyword: '', maintKeyword: '', pendingVendorId: 0, vendorModalId: 0,
         maintSort: 'desc', maintModalId: 0,
-        keyword: '', page: 'dashboard', editingAssetId: 0, editingUserId: 0, editingUpdatedAt: ''
+        keyword: '', page: 'dashboard', editingAssetId: 0, editingUserId: 0, editingUpdatedAt: '',
+        recycleKeyword: '', maintVendorFilter: ''
     };
 
     const $ = (id) => document.getElementById(id);
@@ -352,13 +353,280 @@
         const opts = state.vendors.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join('');
         const aV = $('a-vendor'); if (aV) aV.innerHTML = '<option value="0">其他 (預設)</option>' + opts;
         const eV = $('e-vendor'); if (eV) eV.innerHTML = '<option value="0">其他 (預設)</option>' + opts;
-        const mV = $('m-vendor'); if (mV) mV.innerHTML = '<option value="">-- 請選擇廠商 --</option>' + state.vendors.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
+        refreshCombos();      // m-vendor 等「可輸入關鍵字」的廠商選擇器
+    }
+
+    // ── 🔍 通用「可輸入關鍵字」下拉選擇器 ────────────────
+    //   HTML（見 index.html）：
+    //     <div class="combo" data-combo-for="欄位id">
+    //       <input class="combo-input">        ← 輸入關鍵字／顯示已選名稱
+    //       <button class="combo-toggle">▾</button>
+    //       <input type="hidden" id="欄位id">  ← 實際值（既有程式直接讀 .value）
+    //       <ul class="combo-list" id="欄位id-list"></ul>
+    //       <div class="combo-hint" id="欄位id-hint"></div>
+    //     </div>
+    //   cfg：{ id, source(), label(), title(), sub(), search(), key()=item.id,
+    //          emptyLabel, unit, hintSuffix, onPick() }
+    const combos = {};
+    const COMBO_MAX = 200;
+
+    function setupCombo(cfg) {
+        const wrap = document.querySelector('[data-combo-for="' + cfg.id + '"]');
+        if (!wrap) return;
+        const input = wrap.querySelector('.combo-input');
+        const list = wrap.querySelector('.combo-list');
+        const toggle = wrap.querySelector('.combo-toggle');
+        const hint = document.getElementById(cfg.id + '-hint');
+        if (!input || !list) return;
+        const st = Object.assign({ wrap: wrap, input: input, list: list, hint: hint, rows: [], active: -1 }, cfg);
+        combos[cfg.id] = st;
+
+        input.addEventListener('focus', () => {
+            if (comboSelectedLabel(cfg.id)) { try { input.select(); } catch (e) {} }
+            renderCombo(cfg.id);
+        });
+        input.addEventListener('click', () => renderCombo(cfg.id));
+        input.addEventListener('input', () => {
+            const hidden = $(cfg.id);
+            if (hidden) hidden.value = '';          // 重新輸入關鍵字＝取消先前選擇
+            renderCombo(cfg.id);
+            if (typeof st.onInput === 'function') { try { st.onInput(input.value || ''); } catch (e) { console.error(e); } }
+        });
+        input.addEventListener('keydown', (e) => handleComboKey(e, cfg.id));
+        input.addEventListener('blur', () => setTimeout(() => hideCombo(cfg.id), 180));
+        list.addEventListener('mousedown', (e) => e.preventDefault());
+        if (toggle) toggle.addEventListener('click', () => {
+            if (list.classList.contains('hidden')) { input.focus(); renderCombo(cfg.id); }
+            else hideCombo(cfg.id);
+        });
+    }
+
+    function comboItems(id) {
+        const st = combos[id];
+        if (!st) return [];
+        let list = [];
+        try { list = st.source() || []; } catch (e) { list = []; }
+        return list.filter(x => x != null);
+    }
+
+    function comboKey(st, item) {
+        const v = (typeof st.key === 'function') ? st.key(item) : item.id;
+        return v == null ? '' : String(v);
+    }
+
+    function comboItemById(id, value) {
+        const st = combos[id];
+        if (!st) return null;
+        const v = String(value == null ? '' : value);
+        return comboItems(id).find(x => comboKey(st, x) === v) || null;
+    }
+
+    function comboSelectedLabel(id) {
+        const st = combos[id];
+        if (!st) return '';
+        const hidden = $(id);
+        const v = hidden ? String(hidden.value || '') : '';
+        if (!v) return '';
+        const item = comboItemById(id, v);
+        return item ? st.label(item) : '';
+    }
+
+    function renderCombo(id) {
+        const st = combos[id];
+        if (!st) return;
+        const hidden = $(id);
+        const selectedValue = hidden ? String(hidden.value || '') : '';
+        const items = comboItems(id);
+        let raw = String(st.input.value || '').trim();
+        if (selectedValue && raw && raw === comboSelectedLabel(id)) raw = '';   // 已選取時再點開＝顯示全部
+        const tokens = raw ? raw.toLowerCase().split(/\s+/) : [];
+        const matches = items.filter(item => {
+            if (!tokens.length) return true;
+            const hay = String((typeof st.search === 'function' ? st.search(item) : st.label(item)) || '').toLowerCase();
+            return tokens.every(t => hay.indexOf(t) >= 0);
+        });
+        st.rows = matches.slice(0, COMBO_MAX);
+        st.active = st.rows.length ? 0 : -1;
+
+        if (!st.rows.length) {
+            const noItemText = (typeof st.emptyText === 'function')
+                ? st.emptyText(raw, items.length)
+                : (items.length ? '找不到符合「' + raw + '」的' + (st.emptyLabel || '資料') : '目前沒有可選的' + (st.emptyLabel || '資料'));
+            st.list.innerHTML = '<li class="combo-empty">' + esc(noItemText) + '</li>';
+        } else {
+            st.list.innerHTML = st.rows.map((item, i) => {
+                const key = comboKey(st, item);
+                const sub = (typeof st.sub === 'function') ? String(st.sub(item) || '') : '';
+                return '<li class="combo-item' + (i === 0 ? ' active' : '') + (key === selectedValue ? ' selected' : '') + '" data-key="' + esc(key) + '" role="option">'
+                    + '<span class="combo-name">' + esc(typeof st.title === 'function' ? st.title(item) : st.label(item)) + '</span>'
+                    + (sub ? '<span class="combo-sub">' + esc(sub) + '</span>' : '') + '</li>';
+            }).join('')
+                + (matches.length > COMBO_MAX ? '<li class="combo-more">符合 ' + matches.length + ' 筆，僅顯示前 ' + COMBO_MAX + ' 筆，請輸入更多關鍵字</li>' : '');
+        }
+
+        st.list.querySelectorAll('.combo-item').forEach(li => {
+            li.addEventListener('click', () => pickCombo(id, li.getAttribute('data-key')));
+        });
+        st.list.classList.remove('hidden');
+        st.input.setAttribute('aria-expanded', 'true');
+        if (st.hint) {
+            const unit = st.unit || '筆';
+            st.hint.classList.remove('hidden');
+            st.hint.textContent = '符合 ' + matches.length + ' ' + unit + '／共 ' + items.length + ' ' + unit
+                + (raw ? '' : (st.hintSuffix || '（可直接輸入關鍵字篩選）'));
+        }
+    }
+
+    function hideCombo(id) {
+        const st = combos[id];
+        if (!st) return;
+        st.list.classList.add('hidden');
+        st.input.setAttribute('aria-expanded', 'false');
+        if (st.hint) st.hint.classList.add('hidden');
+        st.active = -1;
+    }
+
+    function pickCombo(id, key) {
+        const st = combos[id];
+        if (!st) return;
+        const item = comboItemById(id, key);
+        if (!item) return;
+        const hidden = $(id);
+        if (hidden) hidden.value = comboKey(st, item);
+        st.input.value = st.label(item);
+        hideCombo(id);
+        if (hidden) hidden.dispatchEvent(new Event('change'));   // 既有 change 邏輯（例如轉移帶入）照常運作
+        if (typeof st.onPick === 'function') { try { st.onPick(item); } catch (e) { console.error(e); } }
+    }
+
+    function handleComboKey(e, id) {
+        const st = combos[id];
+        if (!st) return;
+        const open = !st.list.classList.contains('hidden');
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!open) { renderCombo(id); return; }
+            if (!st.rows.length) return;
+            st.active = e.key === 'ArrowDown'
+                ? Math.min(st.rows.length - 1, st.active + 1)
+                : Math.max(0, st.active - 1);
+            const items = st.list.querySelectorAll('.combo-item');
+            items.forEach((li, i) => li.classList.toggle('active', i === st.active));
+            if (items[st.active]) items[st.active].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            if (!open) return;
+            e.preventDefault();                                    // 避免直接送出表單
+            if (st.active >= 0 && st.rows[st.active]) pickCombo(id, comboKey(st, st.rows[st.active]));
+        } else if (e.key === 'Escape' || e.key === 'Tab') {
+            hideCombo(id);
+        }
+    }
+
+    function resetCombo(id) {
+        const hidden = $(id);
+        if (hidden) hidden.value = '';
+        const st = combos[id];
+        if (st) { st.input.value = ''; hideCombo(id); }
+    }
+
+    // 設定值但不觸發 onPick（例如由別處帶入既有資料）
+    function setComboValue(id, value) {
+        const st = combos[id];
+        const hidden = $(id);
+        if (!hidden) return;
+        hidden.value = value == null ? '' : String(value);
+        if (!st) return;
+        const item = comboItemById(id, hidden.value);
+        st.input.value = item ? st.label(item) : '';
+        hideCombo(id);
+    }
+
+    // 資料來源更新後：保留仍存在的選擇，否則清空（已選項的名稱／部門也會跟著更新）
+    function refreshCombos() {
+        Object.keys(combos).forEach(id => {
+            const st = combos[id];
+            const hidden = $(id);
+            const cur = hidden ? String(hidden.value || '') : '';
+            if (!cur) return;
+            const item = comboItemById(id, cur);
+            if (!item) { resetCombo(id); return; }
+            st.input.value = st.label(item);
+        });
+    }
+
+    // ── 各頁面的選擇器設定 ──────────────────────────────
+    function assetComboConfig(id) {
+        return {
+            id: id,
+            source: () => state.assets,
+            label: (a) => '[' + (a.asset_no || '') + '] ' + (a.name || '') + '（' + deptText(a.department) + '）',
+            title: (a) => '[' + (a.asset_no || '') + '] ' + (a.name || ''),
+            sub: (a) => [deptText(a.department), a.custodian ? '👤 ' + a.custodian : '', a.location ? '📍 ' + a.location : ''].filter(Boolean).join('　'),
+            search: (a) => [a.asset_no, a.name, a.custodian, a.sn, a.location, a.category, catText(a.category), a.department, deptText(a.department)].join(' '),
+            emptyLabel: '資產',
+            unit: '筆',
+            hintSuffix: '（輸入編號、名稱、保管窗口、位置可再篩選）'
+        };
+    }
+
+    function vendorComboConfig(id, extra) {
+        const base = {
+            id: id,
+            source: () => state.vendors,
+            key: (v) => v.id,
+            label: (v) => v.name || '',
+            title: (v) => v.name || '',
+            sub: (v) => [v.representative ? '👤 ' + v.representative : '', v.phone ? '📞 ' + v.phone : '', v.address ? '📍 ' + v.address : ''].filter(Boolean).join('　'),
+            search: (v) => [v.name, v.representative, v.phone, v.address, v.service_items].join(' '),
+            emptyLabel: '廠商',
+            unit: '家',
+            hintSuffix: '（輸入名稱、服務專員、電話、地址可再篩選）'
+        };
+        return Object.assign(base, extra || {});
+    }
+
+    // 維護歷程「匯出廠商」：來源為維護紀錄中實際出現的廠商名稱
+    function maintVendorNames() {
+        const names = [];
+        state.maint.forEach(r => {
+            const n = String(r.vendor_name || '').trim();
+            if (n && names.indexOf(n) < 0) names.push(n);
+        });
+        return names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+    }
+
+    // 維護歷程看板：同一欄位同時做「篩選紀錄」與「選擇匯出廠商」
+    function maintRecordComboConfig() {
+        return {
+            id: 'maint-export-vendor',
+            source: () => maintVendorNames(),
+            key: (n) => n,
+            label: (n) => n,
+            title: (n) => n,
+            search: (n) => n,
+            emptyLabel: '廠商',
+            unit: '家',
+            hintSuffix: '（直接輸入＝篩選紀錄；選取廠商＝鎖定該廠商並作為匯出對象）',
+            emptyText: (raw) => (raw
+                ? '找不到符合「' + raw + '」的廠商（已用此關鍵字篩選下方紀錄）'
+                : '目前沒有可選的廠商。'),
+            onInput: (raw) => {
+                state.maintKeyword = raw || '';
+                state.maintVendorFilter = '';
+                resetPage('maint');
+                renderMaint();
+            },
+            onPick: (name) => {
+                state.maintVendorFilter = String(name || '');
+                state.maintKeyword = '';
+                resetPage('maint');
+                renderMaint();
+            }
+        };
     }
 
     function fillAssetSelects() {
-        const html = '<option value="">-- 請選擇資產 --</option>' + state.assets.map(a =>
-            `<option value="${a.id}">[${esc(a.asset_no)}] ${esc(a.name)}（${esc(deptText(a.department))}）</option>`).join('');
-        ['r-asset', 't-asset'].forEach(id => { const el = $(id); if (el) el.innerHTML = html; });
+        refreshCombos();
     }
 
     // ── 資料載入 ───────────────────────────────────────
@@ -749,21 +1017,16 @@
         await showPage('vendor-edit');
     }
 
-    function renderVendorPicker(keyword) {
-        const sel = $('vendor-edit-select');
-        if (!sel) return;
-        const kw = String(keyword == null ? (state.vendorEditKeyword || '') : keyword).trim().toLowerCase();
-        const list = state.vendors.filter(v => vendorMatches(v, kw));
-        const cur = sel.value;
-        sel.innerHTML = '<option value="">-- 請選擇廠商（共 ' + list.length + ' 家）--</option>' +
-            list.map(v => '<option value="' + v.id + '">' + esc(v.name) + (v.phone ? '（' + esc(v.phone) + '）' : '') + '</option>').join('');
-        if (cur && list.some(v => String(v.id) === cur)) sel.value = cur;
-        if (state.pendingVendorId) {
-            const target = state.pendingVendorId;
-            state.pendingVendorId = 0;
-            sel.value = String(target);
-            loadVendorIntoEdit(target);
-        }
+    // 清單更新後同步選擇器；若由「廠商管理看板」帶入，自動載入該廠商
+    function renderVendorPicker() {
+        refreshCombos();
+        const target = state.pendingVendorId;
+        if (!target) return;
+        state.pendingVendorId = 0;
+        const v = state.vendors.find(x => x.id === Number(target));
+        if (!v) return;
+        setComboValue('vendor-edit-select', v.id);
+        loadVendorIntoEdit(v.id);
     }
 
     async function loadVendorIntoEdit(id) {
@@ -789,7 +1052,7 @@
         $('form-vendor-edit').classList.remove('hidden');
         const note = $('vendor-edit-note');
         if (note) { note.className = 'tip-mini'; note.textContent = '✏️ 正在維護：' + v.name + '（已取得編輯鎖，其他人無法同時編輯）'; }
-        const sel = $('vendor-edit-select'); if (sel) sel.value = String(v.id);
+        setComboValue('vendor-edit-select', v.id);
     }
 
     function clearVendorEditForm() {
@@ -865,27 +1128,21 @@
     }
 
     function renderMaintExportVendors() {
-        const sel = $('maint-export-vendor');
-        if (!sel) return;
-        const names = [];
-        state.maint.forEach(r => {
-            const n = String(r.vendor_name || '').trim();
-            if (n && names.indexOf(n) < 0) names.push(n);
-        });
-        names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-        const cur = sel.value;
-        sel.innerHTML = '<option value="">-- 選擇要匯出的廠商（未選＝全部）--</option>'
-            + names.map(n => '<option value="' + esc(n) + '">' + esc(n) + '</option>').join('');
-        if (cur && names.indexOf(cur) >= 0) sel.value = cur;
+        refreshCombos();      // 匯出廠商（與搜尋共用同一欄位）
     }
 
     function renderMaint() {
         const tbody = document.querySelector('#maint-table tbody');
         if (!tbody) return;
         const kw = String(state.maintKeyword || '').trim().toLowerCase();
+        const tokens = kw ? kw.split(/\s+/) : [];
+        const vendorFilter = String(state.maintVendorFilter || '').trim();
         const list = state.maint.filter(r => {
-            if (!kw) return true;
-            return [r.vendor_name, r.equipment, r.equipment_sn, r.maint_type, r.content, r.notes, r.handler].join(' ').toLowerCase().indexOf(kw) >= 0;
+            if (vendorFilter) return String(r.vendor_name || '').trim() === vendorFilter;
+            if (!tokens.length) return true;
+            const hay = [r.vendor_name, r.equipment, r.equipment_sn, r.maint_type, r.content, r.notes, r.handler]
+                .map(v => String(v == null ? '' : v).toLowerCase()).join(' ');
+            return tokens.every(t => hay.indexOf(t) >= 0);
         }).sort((a, b) => {
             const da = String(a.maint_date || ''), db = String(b.maint_date || '');
             const cmp = da.localeCompare(db);
@@ -897,8 +1154,18 @@
 
         tbody.innerHTML = '';
         const label = $('maint-count-label');
-        if (label) label.textContent = kw ? ('符合 ' + list.length + ' / ' + state.maint.length + ' 筆') : ('共 ' + state.maint.length + ' 筆');
-        const empty = $('maint-empty'); if (empty) empty.classList.toggle('hidden', list.length > 0);
+        if (label) {
+            label.textContent = (vendorFilter || kw)
+                ? ('符合 ' + list.length + ' / ' + state.maint.length + ' 筆')
+                : ('共 ' + state.maint.length + ' 筆');
+        }
+        const empty = $('maint-empty');
+        if (empty) {
+            empty.classList.toggle('hidden', list.length > 0);
+            empty.textContent = (vendorFilter || kw)
+                ? ('找不到符合「' + (vendorFilter || kw) + '」的維護紀錄。')
+                : '目前沒有維護紀錄。';
+        }
         renderMaintStats();
         renderMaintExportVendors();
         if (!list.length) { renderPager('pager-maint', 'maint', info, renderMaint); return; }
@@ -955,10 +1222,30 @@
     function renderRecycle() {
         const tbody = document.querySelector('#recycle-table tbody');
         if (!tbody) return;
-        const info = pageSlice('recycle', state.recycle);
+        const kw = String(state.recycleKeyword || '').trim().toLowerCase();
+        const tokens = kw ? kw.split(/\s+/) : [];
+        const list = state.recycle.filter(a => {
+            if (!tokens.length) return true;
+            const hay = [a.asset_no, a.name, a.custodian, a.sn, a.location, a.department, deptText(a.department), a.category, catText(a.category)]
+                .map(v => String(v == null ? '' : v).toLowerCase()).join(' ');
+            return tokens.every(t => hay.indexOf(t) >= 0);
+        });
+        const info = pageSlice('recycle', list);
         tbody.innerHTML = '';
-        const empty = $('recycle-empty'); if (empty) empty.classList.toggle('hidden', state.recycle.length > 0);
-        if (!state.recycle.length) { renderPager('pager-recycle', 'recycle', info, renderRecycle); return; }
+        const countLabel = $('recycle-count-label');
+        if (countLabel) {
+            countLabel.textContent = state.recycle.length
+                ? (kw ? ('符合 ' + list.length + ' / ' + state.recycle.length + ' 筆') : ('共 ' + state.recycle.length + ' 筆'))
+                : '—';
+        }
+        const purgeAllBtn = $('purge-all-btn');
+        if (purgeAllBtn && !purgeAllBtn.classList.contains('hidden')) purgeAllBtn.disabled = !state.recycle.length;
+        const empty = $('recycle-empty');
+        if (empty) {
+            empty.classList.toggle('hidden', list.length > 0);
+            empty.textContent = state.recycle.length ? ('找不到符合「' + kw + '」的資產。') : '回收桶目前是空的。';
+        }
+        if (!list.length) { renderPager('pager-recycle', 'recycle', info, renderRecycle); return; }
         info.rows.forEach(a => {
             const tr = document.createElement('tr');
             tr.innerHTML = '<td><span class="asset-no">' + esc(a.asset_no) + '</span></td>'
@@ -966,17 +1253,54 @@
                 + '<td><span class="dept">' + esc(deptText(a.department)) + '</span></td>'
                 + '<td>' + esc(catText(a.category)) + '</td>'
                 + '<td>' + dash(a.custodian) + '</td>'
-                + '<td style="text-align:center;"><button class="btn btn-success btn-sm" data-restore="' + a.id + '">🔄 還原</button></td>';
+                + '<td style="text-align:center;white-space:nowrap;">'
+                + '<button class="btn btn-success btn-sm" data-restore="' + a.id + '" title="還原到總覽">🔄 還原</button> '
+                + '<button class="btn btn-danger btn-sm" data-purge="' + a.id + '" title="永久刪除（無法復原）">🗑️ 永久刪除</button></td>';
             tbody.appendChild(tr);
         });
         tbody.querySelectorAll('[data-restore]').forEach(btn => btn.addEventListener('click', () => restoreAsset(Number(btn.getAttribute('data-restore')))));
+        tbody.querySelectorAll('[data-purge]').forEach(btn => btn.addEventListener('click', () => purgeAsset(Number(btn.getAttribute('data-purge')))));
         renderPager('pager-recycle', 'recycle', info, renderRecycle);
     }
 
     async function restoreAsset(id) {
         if (!confirmBox('🔄 確定要將此資產還原到總覽？')) return;
-        try { await post('/api/assets/' + id + '/restore'); toast('🔄 已還原資產。', 'ok'); await loadRecycle(); }
+        try { await post('/api/assets/' + id + '/restore'); toast('🔄 已還原資產。', 'ok'); await loadRecycle(); loadStats().catch(() => {}); }
         catch (err) { toast('❌ ' + err.message, 'err'); }
+    }
+
+    // 🗑️ 回收桶：個別永久刪除
+    async function purgeAsset(id) {
+        const a = state.recycle.find(x => x.id === id);
+        const who = a ? (a.asset_no + '（' + (a.name || '') + '）') : ('#' + id);
+        if (!confirmBox('🗑️ 確定「永久刪除」這筆資產？\n\n' + who + '\n\n該資產的維修／轉移／履歷紀錄會一併刪除，且無法復原。\n（若只是要隱藏，請保留在回收桶或按「🔄 還原」）')) return;
+        try {
+            await del('/api/assets/' + id + '/purge');
+            toast('🗑️ 已永久刪除資產。', 'ok');
+            await loadRecycle();
+            loadStats().catch(() => {});
+        } catch (err) { toast('❌ ' + err.message, 'err'); }
+    }
+
+    // 🧹 回收桶：全部清空（僅系統管理員）
+    async function purgeAllRecycle() {
+        const n = state.recycle.length;
+        if (!n) { toast('ℹ️ 回收桶目前是空的。', 'info'); return; }
+        if (!confirmBox('🧹 確定要「清空資源回收桶」？\n\n共 ' + n + ' 筆資產會被永久刪除，其維修／轉移／履歷紀錄也會一併刪除。')) return;
+        if (!confirmBox('⚠️ 最後確認：永久刪除 ' + n + ' 筆資產，此操作無法復原，確定執行？')) return;
+        const btn = $('purge-all-btn');
+        const old = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ 清除中...'; }
+        try {
+            const res = await post('/api/recycle/purge-all', { confirm: 'PURGE' });
+            toast('🧹 已清空回收桶（刪除 ' + (res.purged || 0) + ' 筆）。', 'ok');
+            await loadRecycle();
+            loadStats().catch(() => {});
+        } catch (err) {
+            toast('❌ ' + err.message, 'err');
+        } finally {
+            if (btn) { btn.textContent = old; btn.disabled = !state.recycle.length; }
+        }
     }
 
     // ── 欄位管理 ───────────────────────────────────────
@@ -1206,7 +1530,7 @@
             });
             toast('🔧 已登記維修，資產轉為「維修中」。', 'ok');
             ['r-vendor', 'r-fault', 'r-date', 'r-cost', 'r-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; });
-            $('r-asset').value = '';
+            resetCombo('r-asset');
             await Promise.all([loadRepairs(), loadAssets()]);
         } catch (err) { toast('❌ ' + err.message, 'err'); }
     }
@@ -1251,7 +1575,7 @@
             });
             toast(res.renumbered ? ('🔄 轉移完成，已重新編號為 ' + res.asset_no) : '🔄 轉移完成（編號不變）', 'ok');
             ['t-custodian', 't-location', 't-date', 't-reason', 't-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; });
-            $('t-asset').value = ''; $('t-to-dept').value = '';
+            resetCombo('t-asset'); $('t-to-dept').value = '';
             updateTransferHint();
             await Promise.all([loadTransfers(), loadAssets()]);
         } catch (err) { toast('❌ ' + err.message, 'err'); }
@@ -1281,9 +1605,11 @@
 
     async function submitMaintForm(e) {
         e.preventDefault();
+        const vendorName = String($('m-vendor').value || '').trim();
+        if (!vendorName) { toast('⚠️ 請選擇維護廠商。', 'warn'); return; }
         try {
             await post('/api/vendor-maint', {
-                vendor_name: $('m-vendor').value,
+                vendor_name: vendorName,
                 maint_date: $('m-date').value,
                 equipment: $('m-equipment').value.trim(),
                 equipment_sn: $('m-sn').value.trim(),
@@ -1963,6 +2289,7 @@
         'login': '登入系統', 'login.fail': '登入失敗', 'logout': '登出系統',
         'password.change': '修改自己的密碼', 'password.reset': '重設他人密碼',
         'asset.create': '新增資產', 'asset.update': '修改資產', 'asset.delete': '移至回收桶', 'asset.restore': '還原資產',
+        'asset.purge': '永久刪除資產', 'recycle.purge_all': '清空資源回收桶',
         'repair.create': '登記維修', 'repair.complete': '維修完工', 'repair.delete': '刪除維修紀錄',
         'transfer.create': '資產轉移', 'transfer.delete': '刪除轉移紀錄',
         'vendor.create': '新增廠商', 'vendor.update': '修改廠商', 'vendor.delete': '刪除廠商',
@@ -2112,10 +2439,21 @@
 
         const search = $('search');
         if (search) search.addEventListener('input', (e) => { state.keyword = e.target.value || ''; resetPage('assets'); renderAssetTable(); });
+        // 🔍 資產選擇器（可輸入關鍵字過濾）
+        // 🔍 可輸入關鍵字的選擇器（資產／廠商）
+        setupCombo(assetComboConfig('r-asset'));           // 維修：選擇資產
+        setupCombo(assetComboConfig('t-asset'));           // 轉移：選擇資產
+        setupCombo(vendorComboConfig('vendor-edit-select', { onPick: (v) => loadVendorIntoEdit(v.id) }));  // 廠商資料維護
+        setupCombo(vendorComboConfig('m-vendor', { key: (v) => v.name }));                                  // 新增維護紀錄
+        setupCombo(maintRecordComboConfig());                                                                // 維護歷程：搜尋＋匯出廠商（同一欄位）
+        const recycleSearch = $('recycle-search');
+        if (recycleSearch) recycleSearch.addEventListener('input', (e) => { state.recycleKeyword = e.target.value || ''; resetPage('recycle'); renderRecycle(); });
         const refresh = $('refresh-btn');
         if (refresh) refresh.addEventListener('click', async () => { toast('🔄 重新載入資料...', 'info'); await refreshPage(state.page); });
         const exportBtn = $('export-btn');
         if (exportBtn) exportBtn.addEventListener('click', doExport);
+        const purgeAllBtn = $('purge-all-btn');
+        if (purgeAllBtn) purgeAllBtn.addEventListener('click', purgeAllRecycle);
 
         // 彈窗
         $('modal-close').addEventListener('click', closeDetail);
@@ -2152,8 +2490,6 @@
         $('ve-cancel').addEventListener('click', clearVendorEditForm);
         $('ve-files').addEventListener('click', () => { const id = parseInt($('ve-id').value, 10) || 0; if (!id) { toast('⚠️ 請先選擇廠商。', 'warn'); return; } openVendorFiles(id); });
         $('vendor-edit-load').addEventListener('click', () => loadVendorIntoEdit($('vendor-edit-select').value));
-        $('vendor-edit-select').addEventListener('change', () => { const v = $('vendor-edit-select').value; if (v) loadVendorIntoEdit(v); });
-        $('vendor-edit-search').addEventListener('input', (e) => { state.vendorEditKeyword = e.target.value; renderVendorPicker(e.target.value); });
         $('vendor-search').addEventListener('input', (e) => { state.vendorKeyword = e.target.value; resetPage('vendors'); renderVendors(); });
         $('goto-vendor-add').addEventListener('click', () => showPage('vendors'));
         $('goto-maint-add').addEventListener('click', () => showPage('vendor-maint-add'));
@@ -2167,7 +2503,6 @@
         $('maint-modal-close').addEventListener('click', closeMaintDetail);
         $('maint-modal').addEventListener('click', (e) => { if (e.target && e.target.id === 'maint-modal') closeMaintDetail(); });
         $('maint-modal-files').addEventListener('click', () => { const id = state.maintModalId; if (id) openMaintDocs(id); });
-        $('maint-search').addEventListener('input', (e) => { state.maintKeyword = e.target.value; resetPage('maint'); renderMaint(); });
         $('m-cancel').addEventListener('click', () => { ['m-date', 'm-equipment', 'm-sn', 'm-type', 'm-handler', 'm-cost', 'm-content', 'm-notes'].forEach(id => { const el = $(id); if (el) el.value = ''; }); });
         $('form-maint').addEventListener('submit', submitMaintForm);
         $('form-field-cat').addEventListener('submit', (e) => { e.preventDefault(); addField('category'); });

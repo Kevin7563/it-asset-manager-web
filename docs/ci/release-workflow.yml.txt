@@ -23,7 +23,7 @@ jobs:
           VER="${GITHUB_REF_NAME#v}"
           mkdir -p out
           zip -r "out/it-asset-manager-web-v${VER}.zip" \
-            server.js package.json config.json.example README.md CHANGELOG.md start.bat \
+            server.js package.json config.json.example README.md CHANGELOG.md start.bat install.bat \
             lib public docs scripts
           ls -lh out
 

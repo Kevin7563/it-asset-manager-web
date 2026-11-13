@@ -112,7 +112,8 @@ const STATIC_FILES = {
     '/': 'index.html',
     '/index.html': 'index.html',
     '/app.js': 'app.js',
-    '/styles.css': 'styles.css'
+    '/styles.css': 'styles.css',
+    '/app.ico': 'app.ico'
 };
 
 function serveStatic(req, res, pathname) {
@@ -530,6 +531,23 @@ async function handleWriteApi(req, res, session, p) {
         const r = await service.restoreAsset(ctx, mm[1], session);
         auditLog(session, 'asset.restore', { target: 'asset', targetId: mm[1], targetNo: (r && r.asset_no) || '', detail: '從回收桶還原' });
         return ok(res, { asset: r });
+    }
+    // 🗑️ 回收桶：永久刪除單筆（含維修／轉移／履歷）
+    if (m === 'DELETE' && (mm = /^\/api\/assets\/(\d+)\/purge$/.exec(p))) {
+        if (!canAsset()) return;
+        const r = await service.purgeAsset(ctx, mm[1], session);
+        auditLog(session, 'asset.purge', { target: 'asset', targetId: mm[1], targetNo: (r && r.asset_no) || '', detail: '永久刪除（含維修／轉移／履歷）' + ((r && r.name) ? '：' + r.name : '') });
+        return ok(res, { purged: true, asset: r });
+    }
+    // 🧹 回收桶：全部清空（全功能）
+    if (m === 'POST' && p === '/api/recycle/purge-all') {
+        if (!canAdmin()) return;
+        const d = await body(req);
+        if (String(d.confirm || '').trim().toUpperCase() !== 'PURGE') throw new Error('請在確認欄輸入 PURGE 才會清空回收桶。');
+        const r = await service.purgeRecycleAll(ctx, session);
+        const nos = (r.assetNos || []).slice(0, 20).join('、') + ((r.assetNos || []).length > 20 ? '…' : '');
+        auditLog(session, 'recycle.purge_all', { target: 'system', detail: '清空回收桶：' + r.purged + ' 筆' + (nos ? '（' + nos + '）' : '') });
+        return ok(res, { purged: r.purged });
     }
 
     // 維修（資產管理權限）

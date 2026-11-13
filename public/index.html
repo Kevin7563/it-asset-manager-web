@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IT 資產管理系統（Web 版）</title>
+<link rel="icon" type="image/x-icon" href="/app.ico">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -152,7 +153,16 @@
                     <div class="card">
                         <h3 class="card-title">🔧 登記資訊資產維修</h3>
                         <form id="form-repair" class="form-grid">
-                            <div class="form-group"><label>選擇維修資產 (必填)</label><select id="r-asset" required></select></div>
+                            <div class="form-group">
+                                <label>選擇維修資產 (必填)</label>
+                                <div class="combo" data-combo-for="r-asset">
+                                    <input type="text" id="r-asset-search" class="combo-input" placeholder="🔍 輸入編號／名稱／保管窗口關鍵字，或按 ▾ 選取" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="r-asset-list">
+                                    <button type="button" class="combo-toggle" tabindex="-1" aria-label="顯示資產清單">▾</button>
+                                    <input type="hidden" id="r-asset">
+                                    <ul class="combo-list hidden" id="r-asset-list" role="listbox" aria-label="資產清單"></ul>
+                                    <div class="combo-hint hidden" id="r-asset-hint"></div>
+                                </div>
+                            </div>
                             <div class="form-group"><label>負責維修廠商 / 工程師</label><input type="text" id="r-vendor"></div>
                             <div class="form-group form-full"><label>故障情形描述 (必填)</label><textarea id="r-fault" rows="2" required></textarea></div>
                             <div class="form-group"><label>送修日期</label><input type="date" id="r-date"></div>
@@ -178,7 +188,16 @@
                     <div class="card">
                         <h3 class="card-title">🔄 登記資訊資產轉移</h3>
                         <form id="form-transfer" class="form-grid">
-                            <div class="form-group"><label>選擇轉移資產 (必填)</label><select id="t-asset" required></select></div>
+                            <div class="form-group">
+                                <label>選擇轉移資產 (必填)</label>
+                                <div class="combo" data-combo-for="t-asset">
+                                    <input type="text" id="t-asset-search" class="combo-input" placeholder="🔍 輸入編號／名稱／保管窗口關鍵字，或按 ▾ 選取" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="t-asset-list">
+                                    <button type="button" class="combo-toggle" tabindex="-1" aria-label="顯示資產清單">▾</button>
+                                    <input type="hidden" id="t-asset">
+                                    <ul class="combo-list hidden" id="t-asset-list" role="listbox" aria-label="資產清單"></ul>
+                                    <div class="combo-hint hidden" id="t-asset-hint"></div>
+                                </div>
+                            </div>
                             <div class="form-group"><label>轉移後部門 (必填，決定是否重新編號)</label><select id="t-to-dept" required></select></div>
                             <div class="form-group"><label>原部門 / 保管人 / 位置</label><input type="text" id="t-from" readonly placeholder="選擇資產後自動帶入"></div>
                             <div class="form-group"><label>新保管窗口 (必填)</label><input type="text" id="t-custodian" required></div>
@@ -255,8 +274,13 @@
                     <div class="card">
                         <h3 class="card-title">✏️ 廠商資料維護</h3>
                         <div class="inline-form">
-                            <input type="text" id="vendor-edit-search" placeholder="🔍 輸入廠商名稱、服務專員、電話搜尋..." style="flex-grow:1;">
-                            <select id="vendor-edit-select" style="min-width:280px;"></select>
+                            <div class="combo" data-combo-for="vendor-edit-select" style="flex:1 1 320px; min-width:260px;">
+                                <input type="text" id="vendor-edit-select-search" class="combo-input" placeholder="🔍 輸入廠商名稱／服務專員／電話篩選，或按 ▾ 選取" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="vendor-edit-select-list">
+                                <button type="button" class="combo-toggle" tabindex="-1" aria-label="顯示廠商清單">▾</button>
+                                <input type="hidden" id="vendor-edit-select">
+                                <ul class="combo-list hidden" id="vendor-edit-select-list" role="listbox" aria-label="廠商清單"></ul>
+                                <div class="combo-hint hidden" id="vendor-edit-select-hint"></div>
+                            </div>
                             <button type="button" class="btn btn-primary" id="vendor-edit-load">載入</button>
                         </div>
                         <div id="vendor-edit-note" class="tip-mini">ℹ️ 請先選擇要維護的廠商（也可從「📊 廠商管理看板」按 ✏️ 直接帶入）。</div>
@@ -302,13 +326,18 @@
                     <div class="card" style="border-left:4px solid #8b5cf6;">
                         <h3 class="card-title">🗂️ 廠商設備維護歷程名冊</h3>
                         <div class="inline-form" style="margin-bottom:10px;">
-                            <select id="maint-export-vendor" style="min-width:260px;"></select>
-                            <button type="button" class="btn btn-success" id="export-maint-vendor-btn">📥 匯出此廠商維護歷程</button>
-                            <input type="text" id="maint-search" placeholder="🔍 快速篩選（廠商 / 設備 / 維護內容）" autocomplete="off" style="flex-grow:1;">
+                            <div class="combo" data-combo-for="maint-export-vendor" style="flex:1 1 340px; min-width:260px;">
+                                <input type="text" id="maint-search" class="combo-input" placeholder="🔍 搜尋紀錄（廠商／設備／維護內容），或輸入廠商名稱後從清單選取" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="maint-export-vendor-list">
+                                <button type="button" class="combo-toggle" tabindex="-1" aria-label="顯示廠商清單">▾</button>
+                                <input type="hidden" id="maint-export-vendor">
+                                <ul class="combo-list hidden" id="maint-export-vendor-list" role="listbox" aria-label="廠商清單"></ul>
+                                <div class="combo-hint hidden" id="maint-export-vendor-hint"></div>
+                            </div>
+                            <button type="button" class="btn btn-success" id="export-maint-vendor-btn">📥 匯出維護歷程</button>
                             <span id="maint-count-label" class="count" style="white-space:nowrap;">—</span>
                         </div>
                         <div class="tip-mini" style="margin-bottom:12px;">
-                            ※ 匯出檔為單一廠商專屬，內含「維護歷程」與「維護單據清單」兩個工作表；未選擇廠商時匯出全部紀錄。
+                            ※ 搜尋欄位：直接輸入關鍵字＝篩選下方紀錄（廠商／設備／維護內容，可用空格分隔多條件）；從清單<b>選取廠商</b>＝只顯示該廠商，並作為「📥 匯出維護歷程」的對象（清除關鍵字＝全部）。匯出檔含「維護歷程」與「維護單據清單」兩個工作表。
                         </div>
                         <div class="table-wrap">
                             <table id="maint-table">
@@ -337,7 +366,16 @@
                         <h3 class="card-title">📝 新增廠商維護紀錄</h3>
                         <div class="tip-mini">💡 儲存後可到「🗂️ 廠商維護歷程看板」查看，並在該筆紀錄按 📎 上傳維護單據。</div>
                         <form id="form-maint" class="form-grid">
-                            <div class="form-group"><label>維護廠商 (必填)</label><select id="m-vendor" required></select></div>
+                            <div class="form-group">
+                                <label>維護廠商 (必填)</label>
+                                <div class="combo" data-combo-for="m-vendor">
+                                    <input type="text" id="m-vendor-search" class="combo-input" placeholder="🔍 輸入廠商名稱／服務專員／電話篩選，或按 ▾ 選取" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="m-vendor-list">
+                                    <button type="button" class="combo-toggle" tabindex="-1" aria-label="顯示廠商清單">▾</button>
+                                    <input type="hidden" id="m-vendor">
+                                    <ul class="combo-list hidden" id="m-vendor-list" role="listbox" aria-label="廠商清單"></ul>
+                                    <div class="combo-hint hidden" id="m-vendor-hint"></div>
+                                </div>
+                            </div>
                             <div class="form-group"><label>維護日期 (必填)</label><input type="date" id="m-date" required></div>
                             <div class="form-group"><label>維護設備 / 項目 (必填)</label><input type="text" id="m-equipment" required></div>
                             <div class="form-group"><label>設備序號</label><input type="text" id="m-sn"></div>
@@ -358,11 +396,19 @@
                 <!-- 資源回收桶 -->
                 <section id="page-recycle" class="page hidden">
                     <div class="card">
-                        <h3 class="card-title">🗑️ 資源回收桶</h3>
-                        <div class="tip-mini">ℹ️ 回收桶是「隱藏」而非永久刪除，按「🔄 還原」即可恢復到總覽。</div>
+                        <h3 class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">🗑️ 資源回收桶
+                            <span style="display:flex;align-items:center;gap:10px;">
+                                <span id="recycle-count-label" class="count">—</span>
+                                <button type="button" class="btn btn-danger btn-sm hidden" id="purge-all-btn" data-admin title="永久刪除回收桶內所有資產（無法復原）">🧹 全部清空</button>
+                            </span>
+                        </h3>
+                        <div class="tip-mini">ℹ️ 回收桶是「隱藏」而非永久刪除，按「🔄 還原」即可恢復到總覽。<br>⚠️ 按「🗑️ 永久刪除」或「🧹 全部清空」會真正從資料庫移除（連同該資產的維修／轉移／履歷紀錄），<b>無法復原</b>。</div>
+                        <div class="toolbar" style="margin-bottom:12px;">
+                            <input type="text" id="recycle-search" placeholder="🔍 搜尋回收桶（資產編號／名稱／保管窗口／部門，多個關鍵字用空格分隔）" autocomplete="off">
+                        </div>
                         <div class="table-wrap">
                             <table id="recycle-table">
-                                <thead><tr><th style="width:170px;">資產編號</th><th>設備名稱</th><th style="width:130px;">部門</th><th style="width:130px;">資產大類</th><th style="width:120px;">保管窗口</th><th style="width:120px;text-align:center;">操作</th></tr></thead>
+                                <thead><tr><th style="width:170px;">資產編號</th><th>設備名稱</th><th style="width:130px;">部門</th><th style="width:130px;">資產大類</th><th style="width:120px;">保管窗口</th><th style="width:210px;text-align:center;">操作</th></tr></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
