@@ -163,10 +163,13 @@ try {
         exit 1
     }
 
-    # 第一次啟動：自動建立桌面／開始功能表捷徑（只做一次；可再執行 install.bat 重建）
+    # 自動建立或修復桌面／開始功能表捷徑。
+    # 線上更新、舊版安裝或目標捷徑遺失時，不可只靠 data\.desktop-shortcut 判斷。
     $shortcutCreated = $false
     $marker = Join-Path $root 'data\.desktop-shortcut'
-    if (-not (Test-Path -LiteralPath $marker)) {
+    $desktopLink = Join-Path (Get-AppDesktopDir) 'IT 資產管理系統.lnk'
+    $startMenuLink = Join-Path (Get-AppStartMenuDir) 'IT 資產管理系統.lnk'
+    if (-not (Test-Path -LiteralPath $desktopLink) -or -not (Test-Path -LiteralPath $startMenuLink)) {
         try {
             New-Item -ItemType Directory -Force -Path (Join-Path $root 'data') | Out-Null
             $links = Install-AppShortcuts -Root $root
