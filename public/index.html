@@ -237,7 +237,7 @@
                         </div>
                         <div class="table-wrap">
                             <table id="vendors-table">
-                                <thead><tr><th>廠商名稱</th><th style="width:100px;">服務專員</th><th style="width:130px;">電話</th><th style="width:80px;text-align:center;">NDA</th><th style="width:170px;">維護合約</th><th style="width:210px;text-align:center;">操作</th></tr></thead>
+                                <thead><tr><th>廠商名稱</th><th style="width:100px;">服務專員</th><th style="width:130px;">電話</th><th style="width:80px;text-align:center;">NDA</th><th style="width:270px;">維護合約</th><th style="width:210px;text-align:center;">操作</th></tr></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
@@ -257,9 +257,13 @@
                             <div class="form-group"><label>聯絡窗口電話</label><input type="text" id="v-phone"></div>
                             <div class="form-group"><label>通訊地址</label><input type="text" id="v-address"></div>
                             <div class="form-group"><label>資安 NDA 狀態</label><select id="v-nda"><option value="1">🔒 已簽署完成</option><option value="0">⚠️ 尚未簽署</option></select></div>
-                            <div class="form-group"><label>維護合約服務範疇</label><input type="text" id="v-items"></div>
-                            <div class="form-group"><label>維護合約開始日</label><input type="date" id="v-start"></div>
-                            <div class="form-group"><label>維護合約截止日</label><input type="date" id="v-end"></div>
+                            <div class="form-full contract-section">
+                                <div class="contract-head">
+                                    <label>🗂️ 維護合約（可新增多筆，每筆可各自記錄名稱與維護範圍）</label>
+                                    <button type="button" class="btn btn-ghost btn-sm" id="v-add-contract">➕ 新增合約</button>
+                                </div>
+                                <div id="v-contracts" class="contract-list"></div>
+                            </div>
                             <div class="form-full" style="text-align:right;">
                                 <button type="button" class="btn btn-ghost" id="v-cancel" style="margin-right:8px;">清除</button>
                                 <button type="submit" class="btn btn-primary">💾 新增廠商</button>
@@ -291,9 +295,13 @@
                             <div class="form-group"><label>聯絡窗口電話</label><input type="text" id="ve-phone"></div>
                             <div class="form-group"><label>通訊地址</label><input type="text" id="ve-address"></div>
                             <div class="form-group"><label>資安 NDA 狀態</label><select id="ve-nda"><option value="1">🔒 已簽署完成</option><option value="0">⚠️ 尚未簽署</option></select></div>
-                            <div class="form-group"><label>維護合約服務範疇</label><input type="text" id="ve-items"></div>
-                            <div class="form-group"><label>維護合約開始日</label><input type="date" id="ve-start"></div>
-                            <div class="form-group"><label>維護合約截止日</label><input type="date" id="ve-end"></div>
+                            <div class="form-full contract-section">
+                                <div class="contract-head">
+                                    <label>🗂️ 維護合約（可新增多筆，每筆可各自記錄名稱與維護範圍）</label>
+                                    <button type="button" class="btn btn-ghost btn-sm" id="ve-add-contract">➕ 新增合約</button>
+                                </div>
+                                <div id="ve-contracts" class="contract-list"></div>
+                            </div>
                             <div class="form-full" style="display:flex; gap:10px; justify-content:space-between; flex-wrap:wrap;">
                                 <button type="button" class="btn btn-danger" id="ve-delete">🗑️ 註銷此廠商</button>
                                 <div style="display:flex; gap:10px;">

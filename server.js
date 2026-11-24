@@ -298,6 +298,10 @@ async function handleImportDesktopBackup(req, res, session) {
         ctx: ctx, dataDir: dataDir, dbPath: dbPath,
         files: files, importFields: d.importFields !== false
     });
+    // 舊備份可能只有單筆合約欄位 → 匯入後升級成多筆合約
+    if (result.dbImported) {
+        try { await service.migrateLegacyVendorContracts(ctx); } catch (e) { console.error('[import] contract migration failed: ' + (e && e.message)); }
+    }
     console.log(`[import] desktop backup by ${session.username}: db=${result.dbImported ? result.dbName : '(none)'} tables=${JSON.stringify(result.tables)} attachments=${result.attachments} repointed=${result.repointed}`);
     auditLog(session, 'import.desktop', { target: 'system', detail: '來源:' + (result.dbName || '(僅附件)') + ' ｜ 附件:' + result.attachments + ' ｜ 路徑修正:' + result.repointed });
     return ok(res, result);
@@ -591,14 +595,14 @@ async function handleWriteApi(req, res, session, p) {
         if (!canVendor()) return;
         const d = await body(req);
         const r = await service.saveVendor(ctx, d, session);
-        auditLog(session, (r && r.created ? 'vendor.create' : 'vendor.update'), { target: 'vendor', targetId: r && r.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') });
+        auditLog(session, (r && r.created ? 'vendor.create' : 'vendor.update'), { target: 'vendor', targetId: r && r.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') + (r && r.contracts !== undefined ? ' ｜ 合約:' + r.contracts + ' 筆' : '') });
         return ok(res, r);
     }
     if (m === 'PUT' && (mm = /^\/api\/vendors\/(\d+)$/.exec(p))) {
         if (!canVendor()) return;
         const d = await body(req); d.id = parseInt(mm[1], 10);
         const r = await service.saveVendor(ctx, d, session);
-        auditLog(session, 'vendor.update', { target: 'vendor', targetId: d.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') });
+        auditLog(session, 'vendor.update', { target: 'vendor', targetId: d.id, targetNo: d.name || '', detail: '廠商:' + (d.name || '') + (r && r.contracts !== undefined ? ' ｜ 合約:' + r.contracts + ' 筆' : '') });
         return ok(res, r);
     }
     if (m === 'DELETE' && (mm = /^\/api\/vendors\/(\d+)$/.exec(p))) {
@@ -695,7 +699,7 @@ async function handleWriteApi(req, res, session, p) {
         const buf = Buffer.from(String(d.dataBase64 || ''), 'base64');
         if (!buf.length) throw new Error('沒有收到檔案內容。');
         const result = await service.importVendorsFromXlsx(ctx, buf, d.fileName || 'vendors.xlsx', session);
-        auditLog(session, 'import.vendors', { target: 'vendor', detail: '檔案:' + (d.fileName || '') + ' ｜ 新增:' + result.inserted + ' ｜ 更新:' + result.updated + ' ｜ 失敗:' + result.errors.length });
+        auditLog(session, 'import.vendors', { target: 'vendor', detail: '檔案:' + (d.fileName || '') + ' ｜ 新增:' + result.inserted + ' ｜ 更新:' + result.updated + ' ｜ 合約:' + (result.contracts || 0) + ' ｜ 失敗:' + result.errors.length });
         console.log(`[import] vendors by ${session.username}: +${result.inserted}, updated ${result.updated}, errors ${result.errors.length}`);
         return ok(res, result);
     }
@@ -880,7 +884,7 @@ async function requestHandler(req, res) {
                 if (p === '/api/export/vendors.xlsx') {
                     if (!hasPerm(session, 'query') && !hasPerm(session, 'vendor')) return denyPerm(res, '一般查詢與報表匯出 或 廠商管理');
                     const r2 = await extras.buildVendorListXlsx(ctx);
-                    auditLog(session, 'export.vendor_list', { target: 'report', detail: '匯出廠商清單' });
+                    auditLog(session, 'export.vendor_list', { target: 'report', detail: '匯出廠商清單 ' + r2.count + ' 家（' + (r2.contracts || 0) + ' 筆合約）' });
                     return sendXlsx(res, r2.buffer, 'IT_合作廠商清單_' + r2.stamp + '.xlsx', 'IT_Vendor_List_' + r2.stamp + '.xlsx');
                 }
                 if (p === '/api/export/vendor-maint.xlsx') {

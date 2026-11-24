@@ -577,7 +577,9 @@
             label: (v) => v.name || '',
             title: (v) => v.name || '',
             sub: (v) => [v.representative ? '👤 ' + v.representative : '', v.phone ? '📞 ' + v.phone : '', v.address ? '📍 ' + v.address : ''].filter(Boolean).join('　'),
-            search: (v) => [v.name, v.representative, v.phone, v.address, v.service_items].join(' '),
+            search: (v) => [v.name, v.representative, v.phone, v.address, v.service_items]
+                .concat(vendorContractList(v).reduce((arr, c) => arr.concat([c.name, c.service_items]), []))
+                .join(' '),
             emptyLabel: '廠商',
             unit: '家',
             hintSuffix: '（輸入名稱、服務專員、電話、地址可再篩選）'
@@ -946,19 +948,100 @@
 
     // ── 廠商 / 維護紀錄 / 回收桶 ───────────────────────
     // ── 廠商管理看板 ────────────────────────────────────
+    // 取得廠商的所有合約（含舊資料相容）
+    function vendorContractList(v) {
+        if (!v) return [];
+        if (Array.isArray(v.contracts) && v.contracts.length) return v.contracts;
+        if (v.service_items || v.maint_start || v.maint_end) {
+            return [{ name: '維護合約', service_items: v.service_items, maint_start: v.maint_start, maint_end: v.maint_end }];
+        }
+        return [];
+    }
+
     function vendorMatches(v, kw) {
         if (!kw) return true;
-        const hay = [v.name, v.representative, v.phone, v.address, v.service_items].join(' ').toLowerCase();
+        const hay = [v.name, v.representative, v.phone, v.address, v.service_items]
+            .concat(vendorContractList(v).reduce((arr, c) => arr.concat([c.name, c.service_items]), []))
+            .join(' ').toLowerCase();
         return hay.indexOf(kw) >= 0;
     }
 
     function vendorMaintBadge(start, end) {
-        if (!end) return '<span class="badge badge-inventory">未設定合約</span>';
+        if (!end) return '<span class="badge badge-inventory">未設定截止日</span>';
         const today = new Date().toISOString().slice(0, 10);
         if (end < today) return '<span class="badge badge-scrapped">⚠️ 合約已到期</span>';
         const soonLimit = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
         if (end <= soonLimit) return '<span class="badge badge-repair">🕒 60 天內到期</span>';
         return '<span class="badge badge-active">✅ 合約有效</span>';
+    }
+
+    // ── 多筆維護合約編輯列 ──────────────────────────────
+    function contractRowHtml(c) {
+        const d = c || {};
+        const start = String(d.maint_start || '').slice(0, 10);
+        const end = String(d.maint_end || '').slice(0, 10);
+        return '<div class="contract-item" data-contract-row>'
+            + '<div class="contract-field"><label>合約名稱</label><input type="text" class="c-name" placeholder="例：伺服器年度維護合約" value="' + esc(d.name || '') + '"></div>'
+            + '<div class="contract-field"><label>維護範圍</label><input type="text" class="c-scope" placeholder="例：機房伺服器與網路設備" value="' + esc(d.service_items || '') + '"></div>'
+            + '<div class="contract-field"><label>開始日</label><input type="date" class="c-start" value="' + esc(start) + '"></div>'
+            + '<div class="contract-field"><label>截止日</label><input type="date" class="c-end" value="' + esc(end) + '"></div>'
+            + '<div class="contract-actions"><button type="button" class="btn btn-danger btn-sm" data-remove-contract title="移除此筆合約">🗑️ 移除</button></div>'
+            + '</div>';
+    }
+
+    function updateContractEmpty(box) {
+        if (!box) return;
+        const rows = box.querySelectorAll('[data-contract-row]');
+        const empty = box.querySelector('.contract-empty');
+        if (!rows.length) {
+            if (!empty) box.insertAdjacentHTML('beforeend', '<div class="contract-empty">尚未新增合約；按「➕ 新增合約」即可建立第 1 筆。</div>');
+        } else if (empty) empty.remove();
+    }
+
+    function renderContractRows(containerId, list) {
+        const box = $(containerId);
+        if (!box) return;
+        const arr = Array.isArray(list) ? list : [];
+        box.innerHTML = arr.map(c => contractRowHtml(c)).join('');
+        updateContractEmpty(box);
+    }
+
+    function addContractRow(containerId, c) {
+        const box = $(containerId);
+        if (!box) return;
+        const empty = box.querySelector('.contract-empty');
+        if (empty) empty.remove();
+        box.insertAdjacentHTML('beforeend', contractRowHtml(c || {}));
+        const rows = box.querySelectorAll('[data-contract-row]');
+        const last = rows[rows.length - 1];
+        if (last) { const input = last.querySelector('.c-name'); if (input) input.focus(); }
+    }
+
+    function collectContracts(containerId) {
+        const box = $(containerId);
+        if (!box) return [];
+        return Array.prototype.slice.call(box.querySelectorAll('[data-contract-row]')).map(row => ({
+            name: String((row.querySelector('.c-name') || {}).value || '').trim(),
+            service_items: String((row.querySelector('.c-scope') || {}).value || '').trim(),
+            maint_start: String((row.querySelector('.c-start') || {}).value || ''),
+            maint_end: String((row.querySelector('.c-end') || {}).value || '')
+        })).filter(c => c.name || c.service_items || c.maint_start || c.maint_end);
+    }
+
+    function vendorContractCell(v) {
+        const list = vendorContractList(v);
+        if (!list.length) return '<span class="badge badge-inventory">未設定合約</span>';
+        return '<div class="vendor-contract-list">' + list.map(c => {
+            const name = c.name ? esc(c.name) : '<span class="muted">（未命名合約）</span>';
+            const period = (c.maint_start || c.maint_end)
+                ? (esc(c.maint_start || '未設定') + ' ~ ' + esc(c.maint_end || '未設定'))
+                : '<span class="muted">未設定</span>';
+            return '<div class="vendor-contract">'
+                + '<div class="vendor-contract-head"><span>' + name + '</span>' + vendorMaintBadge(c.maint_start, c.maint_end) + '</div>'
+                + '<div class="sub">📅 ' + period + '</div>'
+                + (c.service_items ? '<div class="sub">💡 ' + esc(c.service_items) + '</div>' : '')
+                + '</div>';
+        }).join('') + '</div>';
     }
 
     function renderVendors() {
@@ -974,13 +1057,12 @@
         if (!list.length) { renderPager('pager-vendors', 'vendors', info, renderVendors); return; }
         info.rows.forEach(v => {
             const nda = v.has_nda ? '<span class="badge badge-active">已簽署</span>' : '<span class="badge badge-scrapped">未簽署</span>';
-            const period = (v.maint_start || v.maint_end) ? (esc(v.maint_start || '—') + ' ~ ' + esc(v.maint_end || '—')) : '<span class="muted">未設定</span>';
             const tr = document.createElement('tr');
             tr.innerHTML = '<td>' + lockIcon(v.id, 'vendor') + '<a href="#" class="name-link" data-view-vendor="' + v.id + '" title="點擊查看完整資訊">' + esc(v.name) + '</a>' + (v.address ? '<div class="sub">' + esc(v.address) + '</div>' : '') + '</td>'
                 + '<td>' + dash(v.representative) + '</td>'
                 + '<td>' + dash(v.phone) + '</td>'
                 + '<td style="text-align:center;">' + nda + '</td>'
-                + '<td style="font-size:12px;">' + vendorMaintBadge(v.maint_start, v.maint_end) + '<div class="sub" style="margin-top:3px;font-size:11px;white-space:nowrap;">📅 ' + period + '</div></td>'
+                + '<td style="font-size:12px;">' + vendorContractCell(v) + '</td>'
                 + '<td style="text-align:center;white-space:nowrap;">'
                 + '<button class="btn btn-primary btn-sm" data-view-vendor="' + v.id + '" title="查看廠商完整資訊與附件">🔍 檢視</button> '
                 + '<button class="btn btn-ghost btn-sm" data-goto-edit="' + v.id + '" title="帶入廠商資料維護頁">✏️ 維護</button> '
@@ -1000,13 +1082,15 @@
         const total = state.vendors.length;
         const noNda = state.vendors.filter(v => !v.has_nda).length;
         const today = new Date().toISOString().slice(0, 10);
-        const soon = state.vendors.filter(v => v.maint_end && v.maint_end >= today && v.maint_end <= new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10)).length;
-        const expired = state.vendors.filter(v => v.maint_end && v.maint_end < today).length;
+        const soonLimit = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
+        const allContracts = state.vendors.reduce((arr, v) => arr.concat(vendorContractList(v)), []);
+        const soon = allContracts.filter(c => c.maint_end && c.maint_end >= today && c.maint_end <= soonLimit).length;
+        const expired = allContracts.filter(c => c.maint_end && c.maint_end < today).length;
         const cards = [
             { label: '廠商總數', value: total, cls: 'stat-blue' },
             { label: '未簽 NDA', value: noNda, cls: 'stat-red' },
-            { label: '合約 60 天內到期', value: soon, cls: 'stat-orange' },
-            { label: '合約已到期', value: expired, cls: 'stat-gray' }
+            { label: '合約 60 天內到期（筆）', value: soon, cls: 'stat-orange' },
+            { label: '合約已到期（筆）', value: expired, cls: 'stat-gray' }
         ];
         box.innerHTML = cards.map(c => '<div class="stat-card ' + c.cls + '"><div class="stat-value">' + c.value + '</div><div class="stat-label">' + c.label + '</div></div>').join('');
     }
@@ -1046,9 +1130,8 @@
         $('ve-phone').value = v.phone || '';
         $('ve-address').value = v.address || '';
         $('ve-nda').value = String(v.has_nda ? 1 : 0);
-        $('ve-items').value = v.service_items || '';
-        $('ve-start').value = (v.maint_start || '').slice(0, 10);
-        $('ve-end').value = (v.maint_end || '').slice(0, 10);
+        const list = vendorContractList(v);
+        renderContractRows('ve-contracts', list.length ? list : [{}]);
         $('form-vendor-edit').classList.remove('hidden');
         const note = $('vendor-edit-note');
         if (note) { note.className = 'tip-mini'; note.textContent = '✏️ 正在維護：' + v.name + '（已取得編輯鎖，其他人無法同時編輯）'; }
@@ -1060,8 +1143,9 @@
             post('/api/locks/release', { entity: 'vendor', id: state.lockedVendor }).catch(() => {});
             state.lockedVendor = 0;
         }
-        ['ve-id', 've-name', 've-rep', 've-phone', 've-address', 've-items', 've-start', 've-end'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+        ['ve-id', 've-name', 've-rep', 've-phone', 've-address'].forEach(id => { const el = $(id); if (el) el.value = ''; });
         const nda = $('ve-nda'); if (nda) nda.value = '1';
+        renderContractRows('ve-contracts', []);
         const f = $('form-vendor-edit'); if (f) f.classList.add('hidden');
         const note = $('vendor-edit-note');
         if (note) { note.className = 'tip-mini'; note.textContent = 'ℹ️ 請先選擇要維護的廠商（也可從「📊 廠商管理看板」按 ✏️ 直接帶入）。'; }
@@ -1078,9 +1162,7 @@
                 phone: $('ve-phone').value.trim(),
                 address: $('ve-address').value.trim(),
                 has_nda: $('ve-nda').value === '1',
-                service_items: $('ve-items').value.trim(),
-                maint_start: $('ve-start').value,
-                maint_end: $('ve-end').value
+                contracts: collectContracts('ve-contracts')
             });
             toast('💾 廠商資料已更新。', 'ok');
             state.lockedVendor = 0;
@@ -1105,8 +1187,9 @@
     }
 
     function clearVendorForm() {
-        ['v-name', 'v-rep', 'v-phone', 'v-address', 'v-items', 'v-start', 'v-end'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+        ['v-name', 'v-rep', 'v-phone', 'v-address'].forEach(id => { const el = $(id); if (el) el.value = ''; });
         const nda = $('v-nda'); if (nda) nda.value = '1';
+        renderContractRows('v-contracts', [{}]);
     }
 
 
@@ -1590,14 +1673,13 @@
             phone: $('v-phone').value.trim(),
             address: $('v-address').value.trim(),
             has_nda: $('v-nda').value === '1',
-            service_items: $('v-items').value.trim(),
-            maint_start: $('v-start').value,
-            maint_end: $('v-end').value
+            contracts: collectContracts('v-contracts')
         };
         if (!payload.name) { toast('⚠️ 請填寫廠商公司名稱。', 'warn'); return; }
         try {
             const res = await post('/api/vendors', payload);
-            toast((res.created ? '✅ 已新增廠商：' : '💾 已更新既有廠商：') + payload.name, 'ok');
+            toast((res.created ? '✅ 已新增廠商：' : '💾 已更新既有廠商：') + payload.name
+                + '（' + payload.contracts.length + ' 筆合約）', 'ok');
             clearVendorForm();
             await loadVendors();
         } catch (err) { toast('❌ ' + err.message, 'err'); }
@@ -1779,9 +1861,17 @@
         state.vendorModalId = v.id;
         const ndaFiles = splitPaths(v.nda_files);
         const conFiles = splitPaths(v.contract_files);
-        const periodText = (v.maint_start || v.maint_end)
-            ? (esc(v.maint_start || '未設定') + ' ~ ' + esc(v.maint_end || '未設定'))
-            : '<span class="muted">未設定</span>';
+        const contracts = vendorContractList(v);
+        const contractHtml = contracts.length
+            ? contracts.map((c, i) => {
+                const period = (c.maint_start || c.maint_end)
+                    ? (esc(c.maint_start || '未設定') + ' ~ ' + esc(c.maint_end || '未設定'))
+                    : '<span class="muted">未設定</span>';
+                return '<div class="full"><b>🗂️ 合約 ' + (i + 1) + '：</b>'
+                    + (c.name ? esc(c.name) : '<span class="muted">（未命名合約）</span>') + '　' + vendorMaintBadge(c.maint_start, c.maint_end)
+                    + '<div class="sub" style="margin-top:3px;">📅 ' + period + '　｜　💡 維護範圍：' + dash(c.service_items) + '</div></div>';
+            }).join('')
+            : '<div class="full"><b>🗂️ 維護合約：</b><span class="muted">未設定</span></div>';
         const archived = ndaFiles.length + conFiles.length;
 
         const title = $('vendor-modal-title');
@@ -1791,9 +1881,7 @@
             + '<div><b>👤 主要服務專員：</b>' + dash(v.representative) + '</div>'
             + '<div><b>📞 聯絡窗口電話：</b>' + (v.phone ? '<a href="tel:' + esc(v.phone) + '" class="name-link">' + esc(v.phone) + '</a>' : '<span class="muted">—</span>') + '</div>'
             + '<div class="full"><b>📍 通訊地址：</b>' + dash(v.address) + '</div>'
-            + '<div class="full"><b>💡 主要維護服務範疇：</b>' + dash(v.service_items) + '</div>'
-            + '<div><b>📅 維護合約期間：</b>' + periodText + '</div>'
-            + '<div><b>📊 維護合約狀態：</b>' + vendorMaintBadge(v.maint_start, v.maint_end) + '</div>'
+            + contractHtml
             + '<div><b>🔒 資安 NDA 狀態：</b>' + (v.has_nda ? '<span class="badge badge-active">🔒 已簽署</span>' : '<span class="badge badge-scrapped">⚠️ 未簽署</span>') + '</div>'
             + '<div><b>📁 附件歸檔：</b>' + (archived ? '<span class="badge badge-inventory">已歸檔 ' + ndaFiles.length + ' 份 NDA／' + conFiles.length + ' 份合約</span>' : '<span class="muted">無隨附文件</span>') + '</div>'
             + '<div class="full"><b>🔒 NDA 資安條款文件：</b>' + vendorFileLinks(ndaFiles) + '</div>'
@@ -2485,6 +2573,21 @@
         $('t-to-dept').addEventListener('change', updateTransferHint);
         $('form-vendor').addEventListener('submit', submitCreateVendor);
         $('v-cancel').addEventListener('click', clearVendorForm);
+        $('v-add-contract').addEventListener('click', () => addContractRow('v-contracts'));
+        $('ve-add-contract').addEventListener('click', () => addContractRow('ve-contracts'));
+        ['v-contracts', 've-contracts'].forEach(id => {
+            const box = $(id);
+            if (!box) return;
+            box.addEventListener('click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('[data-remove-contract]') : null;
+                if (!btn) return;
+                const row = btn.closest('[data-contract-row]');
+                if (row) row.remove();
+                updateContractEmpty(box);
+            });
+        });
+        renderContractRows('v-contracts', [{}]);
+        renderContractRows('ve-contracts', []);
         $('form-vendor-edit').addEventListener('submit', submitVendorEdit);
         $('ve-delete').addEventListener('click', deleteVendorFromEdit);
         $('ve-cancel').addEventListener('click', clearVendorEditForm);
